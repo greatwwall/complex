@@ -1,16 +1,3 @@
-
-/*
- * Copyright Notice:
- *      Copyright  1998-2009, Huawei Technologies Co., Ltd.  ALL Rights Reserved.
- *
- *      Warning: This computer software sourcecode is protected by copyright law
- *      and international treaties. Unauthorized reproduction or distribution
- *      of this sourcecode, or any portion of it, may result in severe civil and
- *      criminal penalties, and will be prosecuted to the maximum extent
- *      possible under the law.
- */
-package com.omm.fms.service.manager;
-
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -20,10 +7,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import org.wcc.framework.AppProperties;
-import org.wcc.framework.log.AppLogger;
-
-import com.omm.fms.service.alarm.util.AlarmConstant;
 
 
 public final class ThreadPoolManager
