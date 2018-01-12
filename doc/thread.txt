@@ -59,3 +59,7 @@
 16、springmvc的controller是singleton的（非线程安全的），这也许就是他和struts2的区别吧
     和Struts一样，Spring的Controller默认是Singleton的，这意味着每个request过来，系统都会用原有的instance去处理，这样导致了两个结果:一是我们不用每次创建Controller，二是减少了对象创建和垃圾收集的时间;由于只有一个Controller的instance，当多个线程调用它的时候，它里面的instance变量就不是线程安全的了，会发生窜数据的问题。
  
+ 16、因为实现Thread类的run方法自身是没有返回值的，所以不能直接获得线程的执行结果，但是可以通过在run方法里把最后的结果传递给实例变量，然后通过getXX方法获取该实例变量的值。
+    继承Callable接口后需要实现call方法，而call方法默认是可以有返回值的，所以可以直接返回想返回的内容。
+    
+ 17、在Java中，最基本的互斥同步手段就是synchronized关键字，synchronized关键字经过编译之后，会在同步块的前后分别形成monitorenter和monitorexit这两个字节码指令，这两个字节码都需要一个reference类型的参数来指明要锁定和解锁的对象。如果Java程序中的synchronized明确指定了对象参数，那就是这个对象的reference；如果没有明确指定，那就根据synchronized修饰的是实例方法还是类方法，去取对应的对象实例或Class对象来作为锁对象。
