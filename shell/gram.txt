@@ -1,0 +1,64 @@
+# 查看所有安装的软件包
+rpm -qa
+
+scp root@8.40.120.143:/root
+	
+rpm -ivh xxxx
+
+awk -F ":" '{print $2}'
+awk -F":" '{print "Username:" $1 "\t\t Uid:" $3 }' /etc/passwd
+
+cat fileName
+
+tar -cvf log.tar log2012.log    仅打包，不压缩！
+tar -zcvf log.tar.gz log2012.log   打包后，以 gzip 压缩
+tar -zxvf /opt/soft/test/log.tar.gz  -C aa/bb/指定目录
+
+cp -rf /user /home
+
+>/dev/null 2>&1
+> 是重定向
+/dev/null 代表空设备文件
+1 表示stdout标准输出,系统默认值是1,所以 ">/dev/null" 等同于 "1>/dev/null"
+2 表示stderr标准错误
+& 表示等同于的意思,2>&1,表示2的输出重定向等同于1
+
+wc -l secs.log 文件行数
+
+find . -name "*.log" -mtime +5 -ok rm {} \;
+在上面的例子中， find命令在当前目录中查找所有文件名以.log结尾、
+更改时间在5日以上的文件，并删除它们，只不过在删除之前先给出提示。 按y键删除文件，按n键不删除。
+
+chown zabbix:zabbix oam.conf
+
+chmod 744 a.txt
+
+mkdir -p /home/filedir
+
+在一个目录中保留最近三个月的文件，三个月前的文件自动删除。
+find /email/v2_bak -mtime +92 -type f -name *.mail[12] -exec rm -rf {} \;
+find . -type f -exec for
+
+
+grep -E '123|abc' filename  // 找出文件（filename）中包含123或者包含abc的行
+egrep '123|abc' filename    // 用egrep同样可以实现
+awk '/123|abc/' filename   // awk 的实现方式
+
+sed -i '1d' a.txt 					//删除文档的第一行
+sed -i "s/def/tihuan/g" test.conf  	//替换
+ | sed 's/ //g' 					//去除所有空格
+
+find . -name "*.txt" | while read LINE; do sed -i "s/def/abc/g" $LINE; done
+
+find . -name "*.sh" | xargs grep "java"
+
+echo ${string: -4}  		截取后4位  
+
+[ '"8.40.120.134"' == '8.40.120.134' ] 
+echo $?
+
+> file 		//清空文件
+
+find . -size +3000k | ll
+
+tail -n 10 test.log | grep -P '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}' | head -1 | awk '{print substr($0,1,23)}'
