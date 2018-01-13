@@ -1,0 +1,19 @@
+1、MySQL常用的存储引擎为MyISAM、InnoDB、MEMORY(HEAP)、MERGE、BDB (BerkeleyDB)、NDB Cluster、EXAMPLE、ARCHIVE、CSV，其中InnoDB提供事务安全表，其他存储引擎都是非事务安全表。 
+  MyISAM是MySQL的默认存储引擎。全表锁，拥有较高的执行速度，一个写请求请阻塞另外相同表格的所有读写请求，并发性能差，占用空间相对较小，mysql 5.5 及以下仅 MYISAM 支持全文索引，不支持事务。 
+  InnoDB存储引擎：行级锁（SQL 都走索引查询），并发能力相对强，占用空间是 MYISAM 的 2.5 倍，不支持全文索引（5.6 开始支持），支持事务。但是比起MyISAM存储引擎，InnoDB写的处理效率差一些并且会占用更多的磁盘空间以保留数据和索引。 
+  MEMORY(HEAP)存储引擎：全表锁，使用存在内存中的内容来创建表。每个MEMORY表只实际对应一个磁盘文件。MEMORY类型的表访问非常得快，因为它的数据是放在内存中的，并且默认使用HASH索引。但是一旦服务关闭，表中的数据就会丢失掉。
+  
+2、Atomic（原子性）：指整数据库事务割工作单位使据库所操作执行功才算整事务功；事务任何SQL语句执行失败已经执行功SQL语句必须撤销数据库状态应该退执行事务前状态
+  Consistency（一致性）：指数据库事务能破坏关系数据完整性及业务逻辑致性例银行转帐事务管事务功失败应该保证事务结束ACCOUNTS表TomJack存款总额2000元
+  Isolation（隔离性）：指并发环境同事务同操纵相同数据每事务都各自完整数据空间
+  Durability（持久性）：指要事务功结束数据库所做更新必须永久保存即使发系统崩溃重新启数据库系统数据库能恢复事务功结束状态
+ 
+3、a）<=> 安全等于，支持null比较，= 不支持null的比较。
+  b）采用binary区分大小写。
+    select * from some_table where binary str='abc'；
+    create table some_table(
+     str char(20) binary  
+    )
+  c）UNSIGNED属性就是将数字类型无符号化。
+  e）内在的操作系统的敏感性决定数据库和表命名的大小写敏感性。这意味着数据库和表名在Unix上是区分大小写的，而在Win32上忽略大小写。
+4、如果我们定义了主键(PRIMARY KEY)，那么InnoDB会选择其作为聚集索引，基于聚集索引的增、删、改、查的效率相对是最高的。
