@@ -22,3 +22,26 @@
      ^：对应的二进制数不同时，对应的结果才为1。如果两个对应位数都为0或者都为1，则对应位的结果为0。
      ~：按对应的二进制数逐位反转，即1取反后变成0,0取反变成1。
 4、如果我们定义了主键(PRIMARY KEY)，那么InnoDB会选择其作为聚集索引，基于聚集索引的增、删、改、查的效率相对是最高的。
+
+5、分区类型
+    RANGE分区：基于属于一个给定连续区间的列值，把多行分配给分区。 
+    LIST分区：类似于按RANGE分区，区别在于LIST分区是基于列值匹配一个离散值集合中的某个值来进行选择。 
+    HASH分区：基于用户定义的表达式的返回值来进行选择的分区，该表达式使用将要插入到表中的这些行的列值进行计算。这个函数可以包含MySQL 中有效的、产生非负整数值的任何表达式。
+    KEY分区：类似于按HASH分区，区别在于KEY分区只支持计算一列或多列，且MySQL 服务器提供其自身的哈希函数。必须有一列或多列包含整数值。
+
+6、主键分区即字段是主键同时也是分区字段，性能最好。 MYSQL的分区字段，必须包含在主键字段内。
+
+7、SELECT DISTINCT
+    < select_list >
+FROM
+    < left_table > < join_type >
+JOIN < right_table > ON < join_condition >
+WHERE
+    < where_condition >
+GROUP BY
+    < group_by_list >
+HAVING
+    < having_condition >
+ORDER BY
+    < order_by_condition >
+LIMIT < limit_number >
