@@ -1,0 +1,136 @@
+'输出所有sql表
+Sub EXPORT_SQL()
+
+    Call outputDefinitionSql
+    
+    
+
+End Sub
+
+'输出告警定义表
+Function outputDefinitionSql()
+
+    Dim sql As String
+    Dim rowCount As Integer
+    Dim row As Integer
+   
+    rowCount = ActiveSheet.UsedRange.Rows.Count
+    
+    Open ThisWorkbook.Path & "/" & "tbl_fm_alarm_definition.sql" For Output As #1
+        Print #1, "START TRANSACTION;"
+        Print #1, "SET CLIENT_ENCODING TO 'UTF8';"
+        Print #1, "set search_path=omm_1;"
+        
+        For sheetNum = 2 To 6
+            
+            
+            For row = 2 To rowCount
+                sql = "INSERT INTO tbl_fm_alarm_definition VALUES ("
+                If Cells(row, 1) <> "" Then
+                    sql = sql & svAlarmid(row) & ","
+                    sql = sql & svMocName(row) & ","
+                    sql = sql & iMoType(row) & ","
+                    sql = sql & iAlarmSeverity(row) & ","
+                    sql = sql & svEventType(row) & ","
+                    sql = sql & iAutoClear(row) & ","
+                    sql = sql & svAlarmChName(row) & ","
+                    sql = sql & svAlarmChName(row) & Z
+                    sql = sql & svAlarmid(row) & ","
+                    sql = sql & svAlarmid(row) & ");"
+                End If
+                If sql <> "INSERT INTO tbl_fm_alarm_definition VALUES (" Then
+                    Print #1, sql
+                End If
+            Next
+        Next
+        
+        Print #1, "COMMIT;"
+    Close #1
+    MsgBox "输出完成！"
+    
+End Function
+
+
+'get svAlarmid and svExtAlarmId 对应列9-I-告警编号（10进制）
+Private Function svAlarmid(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 9), Chr(13), "")
+    svAlarmid = "'" & str & "'"
+End Function
+
+'get svMocName 对应列2-C-管理对象
+Private Function svMocName(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 2), Chr(13), "")
+    svMocName = "'" & str & "'"
+End Function
+
+'get iMoType 对应列-无
+Private Function iMoType(ByVal row As Integer) As String
+    iMoType = 0
+End Function
+
+'get iAlarmSeverity 对应列4-D-事件级别
+Private Function iAlarmSeverity(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 4), Chr(13), "")
+    If str = "紧急" Then
+        str = 1
+    ElseIf str = "重要" Then
+        str = 2
+    ElseIf str = "次要" Then
+        str = 3
+    ElseIf str = "提示" Then
+        str = 4
+    Else
+        'MsgBox "第" & row & "行事件级别描述错误：" & str
+        str = 4
+    End If
+    iAlarmSeverity = str
+End Function
+
+'get svEventType 对应列1-A-事件类型
+Private Function svEventType(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 1), Chr(13), "")
+    If str = "故障" Then
+        str = 1
+    ElseIf str = "事件" Then
+        str = 2
+    Else
+        'MsgBox "第" & row & "行事件类型描述错误：" & str
+        str = 2
+    End If
+    svEventType = "''"
+End Function
+
+'get iAutoClear 对应列18-R，默认0
+Private Function iAutoClear(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 18), Chr(13), "")
+    If str = "是" Then
+        str = 0
+    ElseIf str = "否" Then
+        str = 1
+    Else
+        'MsgBox "第" & row & "行是否可自动清除描述错误：" & str
+        str = 0
+    End If
+    iAutoClear = str
+End Function
+
+'get svAlarmEnName 对应列6-F-组件
+Private Function svAlarmEnName(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 6), Chr(13), "")
+    svAlarmEnName = "'" & str & "'"
+End Function
+
+'get svAlarmChName 对应列5-E-事件名称
+Private Function svAlarmChName(ByVal row As Integer) As String
+    Dim str As String
+    str = Replace(Cells(row, 5), Chr(13), "")
+    svAlarmChName = "'" & str & "'"
+End Function
+
+
