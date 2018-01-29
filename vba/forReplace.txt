@@ -1,0 +1,17 @@
+Sub replaceText()
+
+    Dim i As Long
+    Dim endRow As Long
+    
+    endRow = Range("A" & Rows.Count).End(xlUp).Row
+    If endRow < 1 Then Exit Sub
+
+    For i = 1 To endRow - 1
+    
+        If Trim(Range("B" & i).Value) = "请联系技术支持处理。" Then
+            Range("N" & i - 1).Value = "请联系技术支持处理。"
+        End If
+
+    Next i
+
+End Sub
