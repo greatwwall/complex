@@ -1,4 +1,4 @@
-'if()replace()
+'if(...)replace(...)
 Sub replaceText()
 
     Dim i As Long
