@@ -17,3 +17,4 @@ Q-Dir
 RegexBuddy
 postman
 notepad++
+xmind
