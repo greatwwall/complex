@@ -18,3 +18,5 @@ RegexBuddy
 postman
 notepad++
 xmind
+MobaXterm_installer
+putty
