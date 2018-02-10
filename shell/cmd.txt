@@ -1,2 +1,3 @@
 free top 查看内存
 getconf LONG_BIT 查看系统位数
+lsb_release -a 查看Linux服务器的版本
