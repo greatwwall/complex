@@ -1,0 +1,2 @@
+free top 查看内存
+getconf LONG_BIT 查看系统位数
