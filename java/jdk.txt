@@ -8,3 +8,10 @@ PATH=$PATH:$JAVA_HOME/bin
 export PATH JAVA_HOME CLASSPATH
 
 source /etc/profile
+
+wget http://mirrors.hust.edu.cn/apache/maven/maven-3/3.5.2/binaries/apache-maven-3.5.2-bin.tar.gz
+//新增行MAVEN_HOME,等于号后面是maven解压的文件夹地址
+export MAVEN_HOME=/usr/local/maven/apache-maven-3.5.2
+//找到PATH行,追加$MAVEN_HOME/bin
+例如
+PATH=$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
