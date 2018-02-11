@@ -24,3 +24,8 @@ https://www.cnblogs.com/zczc1996/p/6270521.html
 wget http://downloads.mysql.com/archives/get/file/mysql-5.6.27-linux-glibc2.5-x86_64.tar.gz
 
 
+### install jenkins
+mkdir /usr/local/jenkins
+chown -R 1000 /usr/local/jenkins
+docker run -itd -p 8080:8080 --name jenkins --privileged=true  -v /usr/local/jenkins:/var/jenkins_home jenkins
+
