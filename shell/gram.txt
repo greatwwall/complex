@@ -62,3 +62,5 @@ echo $?
 find . -size +3000k | ll
 
 tail -n 10 test.log | grep -P '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}' | head -1 | awk '{print substr($0,1,23)}'
+
+shell进度条
