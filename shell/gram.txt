@@ -64,3 +64,5 @@ find . -size +3000k | ll
 tail -n 10 test.log | grep -P '\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}' | head -1 | awk '{print substr($0,1,23)}'
 
 shell进度条
+
+curl -k -v -H "X-Auth-Token:40a66788-2249-e584-8bba-8c29dfe763e8" -H "Content-Type:application/json;charset=UTF-8" -X POST https://8.40.100.243:7443/sec/service/modifyPassWord -d '{"userName":"test","newPassWord":"Huawei@123","oldPassword":null}'
