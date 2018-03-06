@@ -1,0 +1,28 @@
+Java语言文字符所占字节数取决于字符编码式
+    ISO8859-1编码式文字符与英文字符占1字节；
+    GB2312或GBK编码式文字符占2字节；
+    UTF-8编码式文字符占3字节；
+    UTF-16编码式文字符占4字节
+    
+ String类getBytes（String charsetName）获取字符串指定编码式编码所字节数组字节数组度该字符串指定编码式所占字节数面测试示例：
+
+　　public static void main（String []args） throws UnsupportedEncodingException  {
+
+　　// 运行结：2
+
+　　System.out.println（"测试".getBytes（"ISO8859-1"）length）；
+
+　　// 运行结：4
+
+　　System.out.println（"测试".getBytes（"GB2312"）length）；
+
+　　// 运行结：4
+
+　　System.out.println（"测试".getBytes（"GBK"）length）；
+
+　　// 运行结：6
+
+　　System.out.println（"测试".getBytes（"UTF-8"）length）；
+
+　　}
+　　注意：String类带参数getBytes（）程序所运行平台默认编码式准进行转换同平台同结建议使用指定编码式getBytes（String charsetName）
