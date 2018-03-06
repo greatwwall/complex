@@ -12,3 +12,5 @@ http://www.cnblogs.com/elleniou/archive/2012/07/31/2617312.html
 
 spring boot
 http://www.cnblogs.com/ityouknow/p/5662753.html
+spring cloud document
+http://cloud.spring.io/spring-cloud-static/Camden.SR7/#_features
