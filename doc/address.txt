@@ -14,3 +14,7 @@ spring boot
 http://www.cnblogs.com/ityouknow/p/5662753.html
 spring cloud document
 http://cloud.spring.io/spring-cloud-static/Camden.SR7/#_features
+
+关注
+http://blog.csdn.net/lifetragedy
+http://www.cnblogs.com/duanxz/category/434044.html
