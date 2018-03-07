@@ -1,0 +1,40 @@
+HashMap
+    非线程安全，无序
+    数组+链表/红黑树
+    key，value允许为null
+    重新计算对象的hash
+    
+Hashtable
+    线程安全，无序
+    数组+链表
+    key，value不允许为null
+    直接使用对象的hashCode方法
+    
+LinkedHashMap
+    线程安全，无序
+    数组+链表
+    
+TreeMap
+    非线程安全，有序
+    红黑树
+    
+Stack
+    先进后出，FILO
+    数组
+    push，peek，pop
+   
+Vector
+    线程安全
+    
+LinkedList
+    双向链表，有序
+    
+ArrayList
+    非线程安全，有序
+    数组
+    
+HashSet
+    非线程安全，无序
+    允许null值
+
+    
