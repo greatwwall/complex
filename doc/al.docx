@@ -1,0 +1,1324 @@
+1 模块概述
+功能概述
+告警模块完成告警收集，告警处理和告警持久化等功能，主要使用场景是产品日常运维。其主要的目的是通过告警监控及时发现产品故障及潜在隐患，并进行定位排除，以保证业务的正常运行。
+逻辑架构
+整体分为三层架构：下层Agent进行告警采集，中间Server侧进行集中处理，上层表现层的网管端进行界面呈现。
+架构整体介绍
+告警模块包含FMA（包含在OMA工程中）、FMS、FMWS和FMI四个工程，其中FMI是提供的告警发送工具，不在这里介绍，逻辑架构图如下：
+ 
+	图1-1  告警模块逻辑架构图
+	FMA部署在业务节点上，收集业务侧产生的告警信息，通过南向Thrift周期地将告警信息发送至FMS。
+	FMS对告警进行集中处理，接收告警并入库持久化保存，上报告警至网管端
+	FMS对告警处理之后，通过南向thrift向FMA回ACK，FMA则删除其消息队列中的告警信息，不再上报，保证可靠性
+	FMS将入库后的告警信息上报至WS，这里我们适配了不同的产品，可根据具体的产品上报至相应的管理界面层。FMWS对告警组装国际化之后上报给GM，同时FMWS处理GM发送的告警同步、告警手动清除等rest请求
+	FMS对外提供RPC接口，处理告警过滤、告警手动清除、告警查询等业务
+	FMS定期对满足条件的告警信息进行自动清理和转储，及时对告警备份，满足数据库的规格。
+
+架构与代码
+由于FMS是主要的业务处理，架构图中把FMS模块的处理流程画了出来。对应代码中具体的类如下：
+ 
+告警接收类
+ com.omm.fms.service.main.FmsThriftServiceImpl
+ 
+对应预处理线程类com.omm.fms.service.alarm.pretreat.ProcessPretreatAlarm 
+ 
+对应告警入库线程类
+com.omm.fms.service.alarm.store.ProcessStoreAlarm 
+ 
+对应告警上报线程类
+com.omm.fms.service.alarm.report.ProcessReportAlarm
+ 
+对应事件入库线程类
+com.omm.fms.service.event.store.ProcessStoreEvent
+ 
+对应告警自动清理任务类，定时器任务
+com.omm.fms.service.alarm.task.AutoClearAlarmTask
+ 
+对应转储任务类
+com.omm.fms.service.alarm.task.ProcessDepositeTask
+ 
+是对外提供的RPC接口实现，对应RPC接口实现类
+com.omm.fms.service.main.FmsRpcServiceImpl
+功能模块图
+FMS和FMWS的功能模块图如下：
+
+
+
+
+
+
+
+
+
+主要功能详解如下：
+告警入库
+FMS对告警进行持久化保存，告警入库的功能是告警模块的核心，也是最复杂的逻辑处理部分。首先是对故障告警和恢复告警分别处理，然后放入相应的缓存中，最后统一批量入库。
+涉及三个缓存队列
+addActiveAlarmList
+
+updateAlarmList
+
+clearAlarmList
+
+请参考流程图看代码学习：
+	处理故障告警流程图：
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	处理恢复告警流程图：
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	告警入库实例
+首先上报故障告警先入库，再上报更新入库，最后上报恢复告警。
+故障告警分配流水号100，同步号200，入库后在Active表中有一条记录，Log表中有一条记录。（见黄色）
+                     
+
+
+更新告警分配流水号100，同步号201，更新Active表中告警的类型、级别或附加信息，并插入Log表中一条记录。（见蓝色）
+
+
+恢复告警分配流水号100，同步号202，更新Active表中告警的清除时间和清除类型，并插入Log表中一条记录。（见灰色）
+
+
+
+
+告警上报至portal
+FMS将业务侧上报的告警入库之后，要主动将告警信息通知到网管，使网管界面及时呈现告警信息，便于维护人员及时发现并解决告警。
+Dsware	UDS	BigData
+主动上报至portal	主动上报至portal	不主动上报portal，但是要调用产品提供的插件，上报告警至北向syslog服务器。见章节1.3.3
+FMWS注册url
+http://127.0.0.1:7777/fm/south/sendAlarm
+ISM-WS注册url https://localhost:28443/ism_o/rest/alarm/notify
+	不注册url
+使用gm-adapter进行鉴权	不使用证书	不涉及
+FMS启动上报线程，通过rpc上报至FMWS，FMWS通过rest上报至GM	FMS启动上报线程，通过rest上报至ISM-WS	FMS不启动上报线程
+另外，事件是一种信息提示作用的告警，网管不用像关注告警一样来关注事件，因此事件只入库保存，不主动上报至portal，portal可通过查询接口查询事件。
+告警上报至syslog
+	应用场景
+招行大数据目前有统一的事件平台，业务系统采用syslog协议把系统数据集成到事件平台去的。
+GalaX HD系统要能够与招行的事件平台对接，以syslog协议上报告警数据到事件平台，以便事件平台查看到GalaX HD系统的告警数据。
+	具体实现
+产品将插件配置在fms_pluginconfig.xml中，fms启动时加载配置文件，在告警入库后调用插件提供的接口，将告警发送至syslog服务器。
+对fms来说，只是调用产品的插件接口，具体的实现由插件来做。
+并且fms_pluginconfig.xml由产品维护，可支持多个插件，当新增插件或修改配置文件都是由产品完成的。
+<pluginInfo>
+        <version>1.0</version>
+        <module>Northbound</module>  ---------module名字的配置必须唯一
+        <jarName>commons-collections-3.2.jar</jarName>
+        <interfaceClass>com.omm.extern.fms.service.IReportAlarmInfoPlugin</interfaceClass>
+       <implementClass>com.omm.fms.plugin.northbound.NorthboundFmsPluginImpl</implementClass>
+</pluginInfo>
+参考文档：          
+事件入库
+事件入库同告警一样，先放入缓存中，然后统一批量入库。不同的是事件的重复抑制是判断上报的9个字段完全相同则是重复事件。由于事件不主动上报portal，不涉及同步机制，因此事件只分配流水号，不分配同步号，同步号为0。
+ACK处理
+对不合法的告警或事件（告警或事件id在定义表中不存在、重复告警或事件等）、入库成功的告警或事件，都需要向A侧回ACK，表示fms已经处理完该告警。
+ACK处理是由ACK线程来完成的。将需要回ACK的告警的AckNo进行组装，按IP：PORT进行分组，对应AckNo列表，向A侧发送ACK消息。
+告警转储
+（1）应用场景
+FMS对告警入库保存，但是为了保证数据库的规格，保障数据库运行的稳定性，提高数据库的运行效率，FMS要限制数据库告警表中的记录，对历史数据进行备份，即对告警历史表中已恢复的告警进行转储。
+（2）具体实现：
+1）转储触发条件：
+a).FMS接受一批新的告警信息入库后，判断历史告警条数。当历史告警达到11W条时，将最先开始的1W条转储到文件中。
+b).每天凌晨零点定时触发，判断历史告警条数。当历史告警达到11W条时，将最先开始的1W条转储到文件中。
+	  2) 转储参数及路径
+	转储参数保存这里表tbl_fm_saving_condition中，通过界面设置转储参数。表中只保存一条转储参数记录。如果告警转储中没有相关参数或者有转储参数信息但是转储开关为关闭(enable 为OFF)时，此时不将转储文件上传到FTP服务器上，将转储文件放到本地的/opt/omm/oms/workspaceX/data目录下，该目录下保留转储文件个数为50，当文件个数大于此上限后，按照文件生成的时间先后顺序开始将多余的最先产生的转储文件删掉,保留该目录下50个文件。在运行过程中如果设置了转储参数信息，当达到条件后将转储目录下的所有转储文件都上传到FTP服务器的指定目录上，然后删除掉本地的相应文件。
+3) 转储文件格式：
+转储文件名为：Alarm_store_xxxx_yy_dd_ hh_mm_ss.txt  (告警)
+Event_store_xxxx_yy_dd_ hh_mm_ss.txt（事件）
+转储文件格式如下两部分：文件说明信息和告警信息列表，文件大小1M左右。
+文件说明信息中包含设备名称、序列号、型号、版本及导出时间五部分，并只能按照此顺序进行排列。其中设备名称、序列号、型号都设置为空，版本号填写到C版本一级即可，时间填写成转储的本地时间
+示例：
+Name :    SN :    Mode :     Version : V100R001C01    Export time : 2010-05-27 10:55:22 GMT+08：00
+告警信息列表包含表头信息和具体告警信息，表头信息定义顺序为：告警id、告警类型、告警级别、告警原因、告警对象、告警实例、发生时间、恢复时间、定位信息、附加信息，对应英文为svalarmid     ialarmcategory     ialarmlevel     svalarmcause     svmoc     svdn     dtoccurtime     dtcleartime     svlocationinfo     svadditionalinfo，转储文件使用用英文显示表头信息。表头各字段之间使用4个空格间隔，便于产品解析，如果值为空，则显示为NULL。
+事件的转储同告警的转储，如上所示。转储时使用postgresql的copy命令直接将1w条记录转储到文件中，不经过fms的缓存，极大地降低了内存占用。
+4)转储失败上报告警
+后台线程在达到转储条件时执行转储，转储失败则上报告警。当用户检查环境之后，重新设置转储参数，会再次触发转储线程，如果转储成功则上报恢复告警。
+转储失败告警的参数配置在alarmConfig.properties中
+ 
+告警同步
+（1）应用场景
+FMS要主动上报告警至GM，由于网络闪断等原因，告警主动上报GM失败，GM就不知道此条告警已发生。同步相当于多了一个补采告警的功能，能够保证fms的告警及时显示在网管上。
+（2）具体实现：
+FMS对外提供告警同步的rest接口，现在只有dsware产品调用。
+GM会保存接收到的告警的同步号，并且会每隔5分钟从fms查询当前的最大、最小同步号。如果由于网络原因，导致fmws主动上报GM失败，GM比对保存的和查询到的最大同步号，每隔5s将同步号不连续的告警同步到界面上，保证了可靠性。
+告警手动清除
+（1）应用场景：
+对于有些告警，业务侧无法自动清除，维护人员发现告警并处理过之后，告警现象在产品上已经不存在了，就要手工从告警界面上清除掉。
+（2）具体实现：
+用户在界面上点击告警清除， WS调用FMS清除告警RPC接口，生成故障告警对应的恢复告警，入库后将恢复告警再主动上报至界面。
+Dsware和大数据的手动清除是通过告警外部ID和流水号唯一确定一条告警，UDS的手动清除是通过流水号唯一确定一条告警，并且需要带清除告警的用户名。
+告警屏蔽
+（1）应用场景：
+对于某条告警，网管端在这段时间不想关注，就要对这条告警进行屏蔽。再上报此id的告警时，FMS只入库保存，就不主动上报至网管。网管查当前告警时也查不到被屏蔽的告警。过段时间后网管又要关注此告警，就可以删除屏蔽规则，之前被屏蔽的告警就作为当前告警被查询出来。
+（2）具体实现：
+1、WS调用FMS创建告警屏蔽规则接口（RPC接口），FMS将规则信息保存在数据表tbl_fm_mask_rule中，其中一个告警ID对应一条规则。FMS保存数据后将处理结果返回给WS。WS接受到处理结果后刷新内存中的屏蔽规则信息。FMS自此之后如果有新的告警产生时，根据屏蔽规则判断该告警是否被屏蔽，如果屏蔽在告警入库时需要将告警信息的屏蔽标志iDisplay设置为1，该条告警不上报给WS。
+2、WS调用FMS删除告警屏蔽规则接口，接口中带有告警ID删除对应的规则信息， FMS刷新告警活动表中未恢复告警的过滤标志iDisplay为-1，并将操作结果返回给WS。
+告警屏蔽只对设置屏蔽规则后的告警生效，再上报此ID的告警则不显示在界面上。删除屏蔽规则之后，会设置iDisplay为未屏蔽，之前屏蔽的告警也会显示在界面上。
+告警查询
+（1）应用场景
+网管可以通过告警查询将未主动上报成功的告警查询出来，保证维护人员及时发现并处理告警信息。
+（2）具体实现：
+提供如下告警查询接口供产品及时查询告警：
+查询接口名	描述	使用的产品
+AlarmQueryModel queryAlarm(QueryCondition conditionStr)	根据设定的告警查询条件（支持告警名称、ID等模糊查询），进行告警分页查询,并对故障告警进行级别统计	BigData
+Result queryEvent(int pageIndx, int pageCount, Map<String, String> orderCondMap,
+        Map<String, String> queryCondMap)	根据设定的事件查询条件，进行分页查询，查询出满足条件的事件，并支持排序	BigData
+Result lstEvent(int sequence, int count)	查询出大于等于流水号对应的count条事件	BigData
+List<AlarmModel> syncAlarm(int beginSyncNo, int endSyncNo)	告警同步接口，根据起始同步号，将告警查询出来	Dsware
+Result lstAlarm(int sequence, int count)	查询出大于等于流水号对应的count条活动告警，未恢复且未被屏蔽的	UDS/BigData
+Result lstFilterAlarm(int sequence, int count)	查询出大于等于流水号对应的活动告警的发生时间后的count条，未恢复且已被过滤的	UDS
+Result lstAlarmLog(int pageIndx, int pageCount, Map<String, String> orderCondMap,
+        Map<String, String> queryCondMap)	根据设定的告警查询条件，进行分页查询，查询出满足条件的被恢复的历史告警和事件，并支持排序	UDS
+Map<String, Integer> syncOneAlarmInfo(String strAlarmID, String strResourceID)	查询指定告警id和资源ID告警的恢复状态，-1表示没被恢复，0表示自动恢复，2表示手动恢复	UDS
+
+注册url
+（1）应用场景：
+不同的产品要求FMS上报至不同的网管，但FMS作为通用的处理通道，不需要关注具体的产品，因此为了适配不同的产品，FMS提供注册url的rpc接口，由产品注册上报告警的url，FMS用此url上报告警至网管。FMS使用配置文件保存url，是为了防止进程重启后注册的url丢失，故在配置文件中固化。
+（2）具体实现：
+ 
+FMS接收到注册的url，将url写入配置文件urlConfig.properties中，并启动上报线程。FM-WS属于我们的内部模块，注册默认的url，如果是默认的url，FMS使用rpc上报告警至FM-WS，否则使用rest接口上报至ISM。
+大数据不要求主动上报至网管，因此不注册url，FMS不启动上报线程。
+邮件通知
+（1）应用场景：
+网管端接收到告警之后，为了及时地通知技术人员进行处理，需要在接收到告警之后发送邮件。
+（2）具体实现：
+fms主动上报告警至ISM，ISM-WS接收到故障告警或者事件后根据通知规则发送相应的邮件，通知相关人员处理告警。在界面上设置邮件规则，fms将邮件规则保存在表tbl_fm_mail_rule中，表中只保存一条记录。如果没有数据，就执行插入操作，否则执行修改操作。
+对于邮件通知功能，fms只是保存邮件规则记录，具体的发送邮件的动作，由ISM-WS来做。
+短信通知
+（1）应用场景：
+网管端接收到告警之后，为了及时地通知技术人员进行处理，需要在接收到告警之后发送短信。
+（2）具体实现：
+fms主动上报告警至ISM，ISM-WS接收到故障告警或者事件后根据通知规则发送相应的短信，通知相关人员处理告警。在界面上设置短信规则，fms将短信规则保存在表tbl_fm_msg_rule中，表中只保存一条记录。如果没有数据，就执行插入操作，否则执行修改操作。
+与邮件通知一样，对于短信通知功能，fms只是保存短信规则记录，具体的发送短信的动作，由ISM-WS来做。
+告警信息国际化
+（1）应用场景：
+网管界面可以设置中英文，因此告警信息也要支持中英文显示。告警国际化发生在FMWS告警向GM上报告警信息或者GM同步告警时候发生。换句话说，告警需要在UI上展现的时候才进行国际化操作。目前国际化只针对Dsware产品，即只上报GM时使用。UDS和大数据的国际化由产品的ws侧完成。
+（2）具体实现：
+国际化语言为中文和英文两种。
+需要进行国际化适配的信息有：
+	告警名称（sv_alarm_name）：通过查询告警定义静态数据表来完成。
+	告警帮助：产品侧提供中英文告警帮助文档，FMWS侧只是需要根据目前环境信息（IP等） +　告警ID + _en(或者_zh)来进行字符串的拼凑并上报。
+	告警原因（sv_alarm_cause）：通过查询告警原因静态信息表来完成中英文国际化。
+	告警定位信息（sv_location_info）和 告警附加信息（sv_additional_info）：
+告警定位信息和告警附加信息在FMA侧以字符串的方式传递到FMS侧，
+且格式和解析规则相同，具体如下：
+告警国际化需要用到四张表：tbl_fm_alarm_definition（告警定义表）、
+tbl_fm_alarm_additionalinfo（告警附加信息表）、
+tbl_fm_alarm_locationinfo（告警定位信息表）、
+tbl_fm_res（告警资源表）。由于fmws是web service，不直接操作数据库。因此fmws在启动的时候通过调用fms的rpc接口，将这四张表加载到缓存中。
+例如，存储集群节点故障率超过阈值告警国际化方法如下：
+ 
+产品在填写告警定位信息和告警附加信息的时候需要结合自身上报的故障参数的个数和顺序来填写。如果个数不对则会产生定位描述信息丢失，如果顺序不对则会产生定位信息紊乱的情况。
+告警上报鉴权
+（1）应用场景：
+FMWS主动向GM上报告警，为了保证告警来源的可靠性，防止恶意攻击，GM需要对上报告警的FMWS进行鉴权，属于机机鉴权。
+（2）具体实现：
+FMWS使用GM提供的gmAdaptor，上报告警时调用gmAdaptor提供的接口，将用户名、密码、url、告警信息、以及oms浮动IP提交至gmAdaptor进行鉴权。同时鉴权时要校验/etc/hosts文件下的ssoserver应为GM的浮动IP。
+
+
+
+
+
+
+
+
+
+其中gm_adapter-1.2.0.jar是由GM提供的，同时还有配置文件adapterconfig.properties和
+ssokey，路径如下：
+ 
+
+修改机机账户密码
+（1）应用场景：
+FMWS主动向GM上报告警，GM对FMWS进行机机鉴权，安全红线要求密码可修改，故提供修改机机账户密码的功能。
+（2）具体实现：
+FMWS的application.properties文件中配置了机机账户的用户名和密码（用AES256加密）：
+默认的用户名是OmmRest，默认的密码是Omm@1234
+userName=OmmRest
+pwd=FA9328137A590D78AC842BFE69BCDFE1
+提供修改机机账户密码的脚本，在SVN目录\Code\OMM\trunk\services\FM\Service\FM-S\tools\mod_gmpwd下，将main.jar与mod_gmpwd.sh拷贝到OMS服务器上的任何目录，前提是OMS服务器上已经安装了FMS
+ 
+执行示例：
+sh mod_gmpwd.sh --oldPwd Omm@1234 --newPwd Huawei@123
+FMWS接收到修改机机账户密码的rpc请求，将配置文件application.properties中的密码改为新密码，并调用gmAdaptor通知GM修改后的密码，GM使用新密码进行机机鉴权。
+动态更新告警定义
+（1）应用场景：
+动态的新增一个组件，在组件安装包中就已经定义好有哪些监控指标，监控插件，已经有告警定义信息。在安装组件时，进行告警定义的配置，使告警定义能够动态生效。
+这里只分析动态更新告警，告警定义不支持动态删除，因为告警定义删除后，历史告警在界面上显示会有问题，并且未恢复的告警也无法被手动清除。
+（2）具体实现：
+OMM只涉及到告警ID的定义，提供检查和更新接口供产品调用，这两个接口要配合使用，首先要调用检查接口，保证告警定义没有问题之后再进行更新。支持新增告警定义，也支持在告警ID不变的情况下，更新原有告警的定义。
+工程介绍
+FMA
+FMA是C语言编写的代码，包含在OMA工程中，由OMA编译成omm_agent.bin，具体原理请参看《OMA模块指南》。
+FMA的功能就是从消息队列中每隔30s取出30条告警，放在FMA的共享内存中，为每条告警分配序列号ACKNo作为此节点上告警的唯一标识，并通过南向thrift将告警发送至FMS。
+当接收到FMS回应的ACKNo时，FMA通过序列号ACKNo找到共享内存中的告警并删除，至此这条告警的处理完成。如果FMS没有回应ACKNo，则FMA会每隔30s重复上报告警，保证可靠性。
+FMS
+FMS的告警处理的核心部分，集中处理告警业务。编译出包的FMS分为两部分：FMS-1.0-All.jar和FMS-1.0-EXTERN.jar。
+FMS-1.0-All.jar是除对外接口依赖的文件后编译的jar包，不对外发布。
+FMS-1.0-EXTERN.jar是对外提供的rpc接口需要依赖的资源编译的jar包，对外发布。
+FMS的功能模块图见章节1.3。
+FMS代码工程的结构如下：
+ 
+FMWS
+FMWS是Web Service工程，需要部署在tomcat容器中，目前只提供给Dsware产品使用。
+FMWS提供REST接口作为通道，沟通FMS和网管端GM，一方面将告警上报至GM界面呈现，一方面为GM提供告警同步、手动清除等REST接口，通过RPC请求由FMS具体处理。
+FMWS需要用到告警定义表、告警定位信息表、告警附加信息表和告警资源表进行国际化，组装成GM需要呈现的告警格式，适配界面的中英文显示。
+FMI
+FMI是对外提供的java进程调用的告警发送工具，编译成FMI-1.0.jar对外发布。
+	FMI的原理
+	FMI采用JNI技术，通过加载动态库libfmlservicexx.so的方式将告警发送至消息队列，发送方式如下图：
+ 
+FMI使用JNI发送告警的流程图：
+ 
+soFileConfig.properties配置文件配置不同产品需要将so文件解压的路径，如UDS配置
+so_file_tmpPath=/var/uds/tmp/，产品需要保证tmp目录权限为777，保证so文件正常地被解压和加载。如果不配置so_file_tmpPath，则默认将so文件解压到当前运行目录下。
+	FMI模拟OMA的功能，向FMS发送告警并且接收到ACK后删除缓存中的告警。
+
+	FMI提供的告警发送方式：
+通过JNI将告警发送至操作系统消息队列，再由OMA上报fms，因此节点必须部署OMA。
+直接通过thrift向fms进程发送告警，不经过oma
+	FMI提供持久化入库的功能
+FMI直接向fms进程发送告警，也有两种方式：
+	FMI接收到业务侧上报的告警先入库保存，待fms回AckNo时，将数据库中的告警删除，其实是模拟oma的功能，保证可靠性。
+	不持久化入库，FMI接收到告警直接发给fms。会存在重启进程之后，未被处理的告警丢失的情况。
+2 基本知识点
+告警类型
+告警类型分为故障告警、更新告警、恢复告警、事件
+告警类型是alarmType字段，0故障告警、4更新告警、1恢复告警、2事件
+故障告警：业务侧发生故障，影响业务的正常运行，如硬盘故障、进程故障等。
+更新告警：是对故障告警的更新，如磁盘利用率超过阈值的告警，达到80%会报一条级别为重要的故障告警，达到90%会报一条级别为严重的故障告警，后面这条告警就是更新告警，告警的级别或附加信息不同。
+恢复告警：业务侧故障解除了，产生一条告警对之前的故障告警进行恢复，即为恢复告警。
+事件：级别最低的一种告警，起到信息或提示的作用，标识这件事情发生。
+告警结构体
+上报告警结构体包括9个字段
+alarmid  alarmType  level  cause  time  moc  resourceID  location  addition
+（告警ID  类型   级别  原因码  时间  告警对象  告警实例  定位信息  附加信息）
+注：moc指的是告警产生源，即告警对象
+	resourceID指的是告警实例
+	比如一条告警在SOD01节点产生，moc值为SOD，resourceID值为SOD01，标识告警的发生位置。
+alarmType：0故障、1恢复、2事件，4更新（由fms检查并赋值）
+level：告警级别，不同的产品级别范围和级别的定义都不同，OMM不用关注。
+dsware告警级别枚举值：
+	1：紧急     2：重要   3：次要   4：提示     5：不确定
+uds告警级别枚举值：
+	2：信息（事件告警）  3：警告   5：重要        6：紧急
+BigData告警级别枚举值:
+	1: 紧急      2：重要      3：次要        4：警告
+
+上报告警的必填参数：id、location、moc、resourceID
+重复告警的判断条件：id、location、moc、resourceID、level、addition
+更新告警：id、location、moc、resourceID相同，level或addition不同
+恢复告警：id、location、moc、resourceID相同，告警类型为1
+重复事件的判断条件：上报的9个字段完全相同即为重复的事件
+告警流水号、同步号
+每一条入库的告警都会分配流水号和同步号。事件只分配流水号，同步号为0。
+同一条告警的故障、更新、恢复有相同的流水号，每入库一条告警都会分配唯一的同步号，同步号用于GM进行告警同步。
+GM会保存接收到的告警的同步号，并且会定时从fms查询当前的最大、最小同步号。如果由于网络原因，导致fmws主动上报GM失败，GM检查同步号，将同步号不连续的告警同步到界面上。
+在告警处理过程中，不考虑流水号、同步号反转的情况。分析如下：
+在代码和数据库中，都是以整形保存的，
+int java.lang.Integer.MAX_VALUE = 2147483647 [0x7fffffff]
+A constant holding the maximum value an int can have, 2^32-1.
+
+ 
+算了一下，平均一天20w条的话，可以运行29年，因此不用考虑反转的情况，写到设计约束中。
+
+
+内部告警ID、外部告警ID
+产品内部使用的告警ID为内部告警ID，在网管界面上显示的告警ID为外部告警ID。
+告警区分内部ID和外部ID的概念主要是针对一体机场景的。一体机包括很多产品部件，每个产品的告警都有自己定义的告警ID区段，不同产品的告警ID区段可能重叠。因此网管端就对告警ID进行统一编排，给各个部件分配不同的告警区间段，用来区别不同部件的告警在界面上的对外显示。比如dsware上报告警至GM，dsware告警的内部告警ID区段为[1001,10000]，外部告警ID区段为[51001,52000]。
+告警清除
+告警清除包括自动清除和手动清除
+自动清除是产品业务侧可以自动检测到故障点是否已经恢复，通过产生恢复告警，将告警清除。
+手动清除是告警现象在产品上不存在后，手工从告警界面上清除。
+数据库中的icleartype字段：-1表示未被清除，0表示自动清除，2表示手动清除
+告警数据库表
+告警一共涉及13张表
+静态表有5张（红色字体），用于告警国际化使用，事件没有国际化。其中定义表用于校验告警ID或事件ID的合法性。
+表名	描述
+tbl_fm_alarm_definition	告警定义表
+tbl_fm_alarm_additionalinfo	告警附加信息表
+tbl_fm_alarm_locationinfo	告警定位信息表
+tbl_fm_res	告警资源表
+tbl_fm_event_definition	事件定义表
+tbl_fm_alloc_no	告警流水号、同步号分配表
+tbl_fm_alarm_active	活动告警表，主键为同步号
+tbl_fm_alarm_log	历史告警表，主键为同步号
+tbl_fm_event_log	历史事件表，主键为同步号
+tbl_fm_mask_rule	屏蔽规则表，存放外部告警ID
+tbl_fm_saving_condition	转储规则表，只有一条记录
+tbl_fm_mail_rule	邮件通知表，只有一条记录
+tbl_fm_msg_rule	短信通知表，只有一条记录
+
+告警活动表、历史告警表、历史事件表的结构相同，只需关注以下字段，其他字段是为了扩展使用，现在还没有使用：
+svsequenceno character varying(64) NOT NULL	序列号AckNo，FMA上报FMS生成的告警的标识
+iserialno integer NOT NULL DEFAULT (-1)	流水号，FMS对告警入库前分配的，故障告警及其对应的更新告警和恢复告警的流水号相同
+isyncno integer NOT NULL	同步号，每条入库的告警都有唯一的同步号，为了GM页面的告警同步使用
+svalarmid character varying(100) NOT NULL	告警ID
+svalarmname character varying(100)	告警名称
+ialarmcategory integer NOT NULL	告警类型，0故障告警、1恢复告警、2事件、4更新告警
+ialarmlevel integer NOT NULL	告警级别
+icleartype integer DEFAULT (-1)	恢复类型：-1未恢复，0自动清除，2自动清除
+dtoccurtime character varying(14) NOT NULL	发生时间
+dtcleartime character varying(14)	清除时间
+svclearalarmusername character varying(20)	手动清除用户名
+svdn character varying(512) NOT NULL DEFAULT ''::character varying	对应resourceID值
+svmoc character varying(30) NOT NULL DEFAULT ''::character varying	对应moc值
+svlocationinfo character varying(512)	定位信息
+svadditionalinfo character varying(4096)	附加信息
+svalarmcause character varying(100) DEFAULT ''::character varying	告警原因
+sveventtype character varying(20) DEFAULT ''::character varying	事件类型，如通信故障、设备故障、进程故障、环境故障、服务质量故障等
+idisplay integer DEFAULT (-1)	告警屏蔽字段，标识是否在ISM界面上显示
+
+告警表的升级策略
+表名	是否是静态表	表名描述	是否有主键	是否有默认数据
+左:Dsware   右:UDS	升级后的表记录
+左:Dsware  右:UDS
+tbl_fm_alarm_definition	是	告警定义表	是	是	是	新版本	新版本
+tbl_fm_alarm_additionalinfo	是	告警附加信息表	是	是	是	新版本	新版本
+tbl_fm_alarm_locationinfo	是	告警定位信息表	是	是	是	新版本	新版本
+tbl_fm_res	是	告警资源表	是	是	是	新版本	新版本
+tbl_fm_event_definition	是	事件定义表	是	是	是	新版本	新版本
+tbl_fm_alloc_no		告警流水号、同步号分配表		是	是	旧版本	旧版本
+tbl_fm_alarm_active		活动告警表（索引）	是			旧版本	旧版本
+tbl_fm_alarm_log		历史告警表（索引）	是			旧版本	旧版本
+tbl_fm_event_log		历史事件表（索引）	是			旧版本	旧版本
+tbl_fm_mask_rule		过滤规则表	是			不涉及	旧版本
+tbl_fm_saving_condition		转储规则表				不涉及	旧版本
+tbl_fm_mail_rule		邮件通知表				不涉及	旧版本
+tbl_fm_msg_rule		短信通知表				不涉及	旧版本
+						主键冲突以新版本为主
+
+告警静态表及告警帮助
+这几张告警静态表，用于告警国际化处理，具体的功能描述见1.3.13章节。
+由产品来维护这几张表中的记录，新增告警由产品添加。
+tbl_fm_alarm_definition	告警定义表
+tbl_fm_alarm_additionalinfo	告警附加信息表
+tbl_fm_alarm_locationinfo	告警定位信息表
+tbl_fm_res	告警资源表
+tbl_fm_event_definition	事件定义表
+	另外，告警帮助也是由产品维护的，OMM作为组件只做通用的处理，与业务强相关的由产品去做，我们不用关注。
+告警配置文件
+	fms的配置文件
+ 
+配置文件	描述	升级后以哪个版本为主
+alarmConfig.properties	告警参数配置文件，历史告警转储失败要发告警，告警的参数通过此配置文件获取。	新版本
+application.properties	框架、线程池、rpc相关配置，rpc端口为23000	新版本
+DBConfig.xml	数据库配置文件	新版本
+log4j.properties	日志配置文件	新版本
+Service.xml	数据库DAO的接口和实现类配置；RPC接口和实现类配置	新版本
+urlConfig.properties	告警上报ISM的url配置文件	新版本
+adapterconfig.properties	Dsware告警上报GM的配置文件
+（gmadaptor鉴权使用，fms不用关注）	新版本
+ssokey	Dsware告警上报GM的公钥
+（gmadaptor鉴权使用，fms不用关注）	新版本
+	fmws的配置文件
+ 
+配置文件	描述	升级后以哪个版本为主
+application.properties	框架、线程池、rpc相关配置，rpc端口为23133	老版本
+（涉及在运行中修改机机账户密码）
+log4j.properties	日志配置文件	新版本
+Service.xml	RPC接口和实现类配置	新版本
+WebController.xml	拦截器配置；rest请求和实现类配置；启动类配置	新版本
+
+OMA和FMS的通信
+FMA和FMS之间是thrift通信。
+消息队列是可靠性保证，进程重启告警不会丢失，除非是OS重启，消息队列会被清空，此为系统约束。
+进程重启时，共享内存中的告警也不会丢失，同样，共享内存也是可靠性保证，当FMS将告警处理完成后向OMA回ack，OMA接收到ack才将共享内存中的告警删掉，认为告警处理完成，否则共享内存中的告警不会被删掉，OMA每隔30s将共享内存中的告警再上报给fms。
+ 
+ACK机制
+FMA和FMS提供告警的ACK机制，确保每个告警在OMS上入库之后，FMA才会删除告警，如果超时未收到，会重发相关告警。
+当告警数据在FMS侧的处理中发生进程重启时，FMS侧缓存中的告警丢失，则未ACK确认的告警数据在FMA侧周期上报。   
+滑动窗口机制
+	问题背景：
+环境异常，FMS向OMA回告警ACK失败，A侧反复上报同样的告警组合（告警---恢复），导致界面上这条告警反复出现和消失。见问题单：DTS2013112102177
+http://dts.huawei.com/net/dts/DTS/DTSWorkflowPage.aspx?No=DTS2013112102177&IsHistory=1
+	解决方案
+为解决这一问题，采用滑动窗口机制，为每个OMA创建一个滑窗，在滑窗中记录ackNo，使得OMA周期上报的已经被fms处理过的告警得到了有效地处理。
+fms接收到告警，先尝试滑动窗口，滑过上次已经成功处理过的告警，然后根据ackNo在滑窗中指定位置注册，注册之后则放入队列中，交由预处理线程、入库线程处理，在回ack之前，在滑窗中登记指定位置登记为T，标识已经被fms处理过。
+
+接收            预处理               入库                      回ack
+
+在滑窗注册
+
+	在滑窗中登记为T
+
+
+
+滑窗大小：OMA每个周期上报的告警数量*2
+count：滑窗内的有效告警数量
+successNo：指向当前已成功处理的告警ackNo
+每次接收到OMA上报的新告警，窗口尝试向后滑动，将不用的数据单元置为无效值。然后根据当前游标指向successNo判断告警是否有效，将无效的告警再放入ack队列中，有效的告警则在滑窗内记录，正常流程处理，在处理完回ack之前，在滑窗内登记状态。
+滑窗的条件：
+successNo指向的单元格的下一个单元格，如果ackNo为有效值（不为0），并且处理结果为True，可以滑动；
+successNo指向的单元格的下一个单元格，如果ackNo为无效值（为0），并且当前滑窗内的计数不为0，即滑窗内有空格的场景，可以滑动
+根据滑窗检查告警的条件：
+接收的告警ackNo小于等于successNo指向的单元格内的ackNo，说明是历史老告警，告警被抑制，检查不通过。
+滑窗初始化：
+OMA每次重启（系统重启），都从2开始上报（目前0和1被OMA内部保留），FMS接收到ackNo为2的告警，认为是OMA重启之后上报的告警，将滑窗初始化，计数清0。
+实例：
+接收OMA上报的2条告警ackNo=2,3
+ackNo=2，先初始化滑窗，如下：
+0	1	2	3	4	5	6	7	8	9	
+……
+1(ackNo-1)	0	0	0	0	0	0	0	0	0	
+True	False	False	False	False	False	False	False	False	False	
+
+successNo=0，count=0
+尝试滑动，此场景下无法滑动
+将ackNo=2,3记录在滑窗中
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	ackNo=2	ackNo=3	0	0	0	0	0	0	0
+True	False	False	False	False	False	False	False	False	False
+
+successNo=0，count=2
+fms处理ackNo=2,3，入库成功，在向OMA回ACK之前，在滑窗中登记状态。
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	ackNo=2	ackNo=3	0	0	0	0	0	0	0
+True	True	True	False	False	False	False	False	False	False
+
+successNo=0，count=2
+再接收OMA上报的5条告警ackNo=4,5,6，先尝试滑窗，滑窗后为：
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	0	ackNo=3	0	0	0	0	0	0	0
+True	False	True	False	False	False	False	False	False	False
+
+successNo=2，count=0
+将ackNo=4,5,6记录在滑窗中
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	0	ackNo=3	ackNo=4	ackNo=5	ackNo=6	0	0	0	0
+True	False	True	False	False	False	False	False	False	False
+
+successNo=2，count=0
+fms处理ackNo=4,5,6，入库成功，在向OMA回ACK之前，在滑窗中登记状态。
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	0	ackNo=3	ackNo=4	ackNo=5	ackNo=6	0	0	0	0
+True	False	True	True	True	True	False	False	False	False
+
+successNo=2，count=3
+由于网络环境原因，fms向OMA回ackNo=4,5,6失败，OMA重复上报ackNo=4,5,6，先尝试滑窗，如下：
+0	1	2	3	4	5	6	7	8	9
+1(ackNo-1)	0	0	0	0	ackNo=6	0	0	0	0
+True	False	False	False	False	True	False	False	False	False
+
+successNo=5，count=0
+由于ackNo=4,5,6，小于等于滑窗内当前的ackNo，故ackNo=4,5,6为重复告警，直接放入ack队列中。
+使用约束：
+该特性目前存在如下约束：
+1. 系统初始状态，或Agent侧系统重启（进程重启没问题），则首条告警不会被抑制。如果首条告警被反复发送，后面的告警也无法抑制。
+   原因是首条告警的序列号会触发滑窗机制的复位。
+2.  S侧如果正在抑制某些告警，此时S侧重启或主备倒换，被抑制的告警还会出现一次（仅一次）。因为滑动窗口的状态未实现主备同步和持久化
+这里面的抑制是指“滑动窗口”层面的抑制，之前的“重复告警”抑制等功能还是有效的，与滑窗机制相独立。
+不同源告警机制
+	什么是不同源告警？
+告警的故障和恢复在不同的节点产生，由不同的OMA上报给fms。
+如下图，由于不同的OMA的上报周期无法同步，导致告警上报到fms产生错序，恢复告警先于故障告警被接收。
+	fms接收到的不同源告警为什么最大相差一个周期？
+如下图，例如：OMS01节点的OMA，12:00:01产生了一条故障，而OMA在12:00:00刚好上报了一批告警，这条故障就要到下个周期12:00:30再上报
+OMS02节点在12:00：03产生了一条恢复，正好到达其OMA的上报周期，这条恢复就先被上报了
+ 
+	告警不同源方案
+	在告警定义中加入字段区分这种不同源上报的告警（0默认 1不同源告警），fms对不同源告警特殊处理。
+	根因是告警顺序不对，解决告警顺序的问题，是采用在fms侧缓存一个周期的方案。这种不同源告警场景下最大也就相差一个周期，并且是在主备倒换时会发生。对不同源告警，按时间顺序放在缓存中，生成放入缓存的时间，当告警在fms缓存中停留一个周期，等待另一节点上报的告警。
+fms对不同源告警建立缓存ConcurrentHashMap<告警ID, LinkedList<AlarmModel>>
+
+
+
+每隔10s查询缓存，
+当系统当前时间-告警入缓存时间>=35s，
+则顺序取出告警
+	类型	故1	恢2	故3	恢4	
+告警放入
+队列时间	12:00:31	12:00:01	12:00:02	12:00:33	
+
+  
+进程退出前将告警入不同源告警表进程启动时从数据库中加载到缓存
+                         放入缓存（按时间顺序插入）后则回ack
+告警从OMA上报至S侧队列，记录入队列时间
+
+
+
+
+
+方案约束
+	 方案约束
+此方案只解决不同源OMA上报错序的问题，相当于在S侧缓存一段时间，在S侧保证顺序。操作系统队列有堆积的场景无法解决；
+OMA进程不在位，没有正常上报告警的场景无法解决；
+延迟了告警上报的时间（35s）
+
+同步机制 
+同步机制是为了保证fms和网管端的告警的一致性，保证网络闪断等场景下的告警能够及时显示在界面上。
+Dsware产品：fmws提供告警同步的rest接口，GM会保存接收到的告警的同步号，并且会每隔5分钟从fms查询当前的最大、最小同步号。如果由于网络原因，导致fmws主动上报GM失败，GM比对保存的和查询到的最大同步号，每隔5s将同步号不连续的告警同步到界面上。
+UDS产品：fms提供告警查询接口，ISM每隔15s主动查询告警，能够将没有主动上报成功的告警及时地显示在界面上。
+BigData产品：不涉及同步机制。因为fms不主动上报至BigData的界面上，BigData每隔30s刷新告警界面，通过告警查询及时地将告警显示在界面上。
+监控机制
+fms作为整个OMM中的一个资源，由HA监控其状态，保证整个OMM正常运行。原理如下：
+
+
+
+
+
+
+
+
+
+
+
+HA监控fms的资源，其实底层调用的就是fms的启动脚本omm_s_fm_ctl.sh。而fms的启动脚本还是调用的是操作系统底层的基本指令。
+性能
+1	一块服务器（配套一个FMA）可以支撑的告警速率为0.5个/s
+2	支持按照0.5条/秒的上报速度，一块服务器（配套一个FMA）缓存告警的容量需要满足以下需求：
+	可以确保告警没有堆积（告警堆积主要是由于之前OMA和OMS断链所导致的）的情况下，OMA和OMS断链一小时内（包含1小时）告警不丢失。
+Agent需要缓存1800条，目前是2000条左右
+	OMS和OMA每中断1个小时，累积的告警需要在2小时内处理完，其中此期间新增的告警不丢失
+FMS处理告警的速度是200个/s ，Agent每隔30s发告警，一个周期为30s，30s范围内处理6000条告警，FMS的接收告警的缓存为6000条
+3	正常情况下，业务进程的告警到FMA需要30秒，FMS会告警ACK，FMA处理这个ACK又需要30秒，所以FMA处理一个告警的时延为1分钟。
+4	FMS最大处理能力300条/秒, FMS平均处理能力200条/秒。
+
+告警信息的显示
+Dsware产品，网管为GM：
+告警模块上报至GM的告警信息是经过组装后的，告警字段比较多，并且支持中英文国际化。给出一个上报给GM的告警实例如下：
+sn=1	流水号
+cause={en_US=Synchoronize with ntp server fault, zh_CN=同步ntp时间失败}	告警产生的原因
+moc=Server	告警对象类型
+location={en_US=ntp_server_ip=192.192.192.100, zh_CN=NTP服务器IP地址=192.192.192.100}	告警定位信息
+resourceIDName=DSWARE_MANAGER	与resourceID值相同
+alarmName={en_US=Synchoronize with ntp server fault, zh_CN=同步ntp时间失败}	告警名称
+severity=2	告警级别
+from=6	from表示是dsware向网管上报的告警
+type=2	事件类型，有进程故障、环境故障等
+
+alarmID=51901	外部告警ID
+additionalInfo={en_US= ntp_server_port=80, zh_CN=NTP服务器端口=80}	告警附加信息
+ip=182.7.101.100	OMS所在节点的浮动IP
+occurTime=2013-03-19 00:59:52	告警发生时间
+category=2	对于GM来说，1故障、2恢复、4更新
+resourceID=DSWARE_MANAGER	告警对象实例，对应界面上的对象ID、告警对象
+urlHelp={en_US=fm/webhelp/en/alarm/alarm/51901.html, zh_CN=fm/webhelp/cn/alarm/alarm/51901.html}	告警帮助路径
+isAutoClear=1	是否可以自动清除，是：1， 否（不可以自动清除）：0
+syncno=1	同步号
+clearTime=2013-01-31 14:29:34	清除时间
+clearType=2	清除类型：-1未清除，0自动清除，2手动清除
+GM的告警界面显示如下：
+
+
+
+
+
+
+对象类型：moc
+对象ID、告警对象：resourceID、 resourceIDName
+部件名称：用户在界面上填写的
+部件类型：GM那边固定写的
+网管接收到恢复告警，是通过告警id、流水号、对象id及部件id去恢复对应的故障告警。
+UDS产品，网管为ISM
+告警模块上报至ISM的告警信息是与数据库中AlarmModel对应的，是原始的告警信息，字段特别多，ISM根据需要取用字段，有以下
+界面显示如下
+
+
+
+
+
+
+
+
+设备名称：resourceID
+设备位置：ISM通过设备名称从topo取的物理位置，需要用到moc
+详细信息：ISM通过event_en.xml或event_zh.xml的描述结合addition显示在界面上
+svLocationInfo、svAlarmCause没有使用到
+网管接收到恢复告警，是通过告警id、流水号去恢复对应的故障告警。告警界面每隔15s刷新一次。
+BigData产品，网管为BigData
+对大数据来说，告警模块不主动上报至portal，是portal直接来查询的，返回的告警信息是与数据库中AlarmModel对应的。
+
+
+
+
+
+
+
+
+Description ：显示的是portal拼接过addition信息
+网管界面每隔30s刷新一次。
+3 告警发送方式及发送工具
+告警发送方式 
+OMM对外提供三种告警发送工具，图解如下：
+
+
+
+
+
+
+
+
+提供C静态库
+如果是C语言编写的业务进程发送告警，需要将libfml.a和FML.h与进程一起编译，发送告警到消息队列中，业务进程需要上报给告警模块的告警字段如下：
+i_internal_id	uint64	告警ID（必选参数）
+i_alarm_type	int32	告警类型（必选参数）：0、1、2分别表示故障告警、恢复告警、事件
+i_alarm_level;	int32	告警级别（必选参数）
+i_alarm_cause;	int32	告警原因（必选参数）
+i_dt_time	int32	告警产生时间（必选参数）
+sv_moc	String（长度为20）	告警源的MOC（必选参数）
+sv_resourceID;	String（长度为20）	告警源对象（必选参数）
+sv_location_info	String（长度为256）	告警源的定位信息（必选参数）
+sv_additional_info	String（长度为256）	附加信息（ＵＤＳ必选参数），附加信息各个参数之间使用分号分隔
+libfml.a和FML.h请在正式发布的版本包中取用
+提供可执行程序sendAlarm
+如果业务进行需要调用Shell、perl等脚本直接发送告警，则告警模块提供可执行程序，可直接在脚本中执行，发送告警到消息队列中，由OMA上报告警至fms。
+使用模板：
+./sendAlarm 告警ID 类型 级别 原因码 时间 "moc" "res ""location " "add"
+示例如下：
+./sendAlarm 10001 0 1 33 "" "oms_osc" "OMS02" "129.20.11.8;22" "129.20.11.7;system admin"
+	其中时间不填会默认生成一个时间，定位信息或附加信息有;或空格则必须要有””
+sendAlarm工具请在正式发布的版本包中取用
+提供FMI-1.0.jar
+如果是Java语言编写的业务进程需要发送告警，告警模块提供外部jar包FMI-1.0.jar，业务进程加载jar包中的libfmlservice.so发送告警或直接通过thrift向fms发送告警。具体实现原理见1.4.4章节的FMI工程介绍。
+FMI-1.0.jar提供三种发送告警的功能：
+可直接由业务进程发送告警至fms，不持久化。（BigData）
+可直接由业务进程发送告警至操作系统消息队列，由OMA上报fms，节点必须部署OMA。（UDS、BigData）
+可直接由业务进程发送告警至fms，并且由FMI做告警的持久化。（Dsware）
+使用JNI的方式，调用动态库
+创建FMServiceImpl实例
+FMServiceImpl fmservice = new FMServiceImpl();
+创建AlarmInfo告警对象，并给告警字段赋值
+AlarmInfo alarmInfo = new AlarmInfo();
+调用sendAlarm接口发送告警
+int iRet = fmservice.sendAlarm(alarmInfo);
+
+具体请参考：FMISotest工程，请在http://3ms.huawei.com/hi/group/2029753/files.html#category=1178563
+下载此工程。 
+在eclipse中打开FMISotest工程，将新的FMI-1.0.jar的包放在lib目录下，并添加到工程引用中。在eclipse中对FMISotest工程点击右键，执行Export->JAR file->next，选择如下：
+ 
+点击Finish后，在指定的目录下生成一个测试jar包，如上图dsware-FMI.jar
+将dsware-FMI.jar中的MANIFEST.MF文件打开，修改为如下：
+Manifest-Version: 1.0
+Class-Path: ./FMI-1.0.jar
+Main-Class: uds.TestMain
+之后将测试jar包dsware-FMI.jar和新的FMI-1.0.jar放在环境上，如下：
+ 
+最后执行java -jar dsware-FMI.jar 22222 0 1 33 0 moc res add loc 1
+omm@Dsware-CI:/opt/chenchen> java -jar dsware-FMI.jar 22222 0 1 33 0 moc res add loc 1
+alarmId arg[0] = 22222moc
+res
+loc0
+add
+       如果是大数据场景，会在当前目录下生成一个libfmlservicex86.so，如果是uds场景，会在tmp目录下生成一个libfmlservicex86-1263421521265.so类似的临时so文件。
+使用thrift直接发给fms
+创建初始化参数实例，并执行初始化
+AlarmModPara para = new AlarmModPara(localIP,localPort, fmsIP, fmsPort);
+AlarmManagerMod.getInstance().init(para);
+创建AlarmInfo告警对象，并给告警字段赋值
+AlarmInfo alarmInfo = new AlarmInfo();
+调用sendAlarm接口发送告警
+AlarmManagerMod.sendAlarm(alarm);
+
+具体请参考：FMItoFMStest工程，请在http://3ms.huawei.com/hi/group/2029753/files.html#category=1178563
+下载此工程。
+在eclipse中打开JNItoFMStest工程，将新的FMI-1.0.jar的包放在lib目录下，并添加到工程引用中。在eclipse中对JNItoFMStest工程点击右键，执行Export->Runnable JAR file->next，选择如下：
+ 
+点击Finish后，在指定的目录下生成一个测试jar包，如上图dsware-FMItoFMS.jar
+将dsware-FMItoFMS.jar中的MANIFEST.MF文件打开，修改为如下：
+Manifest-Version: 1.0
+Rsrc-Class-Path: ./ log4j-1.2.16.jar wc2frm-1.0-SNAPSHOT.jar slf4j-log
+ 4j12-1.6.1.jar libthrift-0.8.0.jar FMI-1.0.jar slf4j-api-1.6.1.jar
+Class-Path: ./ log4j-1.2.16.jar wc2frm-1.0-SNAPSHOT.jar slf4j-log
+ 4j12-1.6.1.jar libthrift-0.8.0.jar FMI-1.0.jar slf4j-api-1.6.1.jar
+Main-Class: test.ClientMain
+之后将测试jar包dsware-FMItoFMS.jar和JNItoFMStest工程lib目录下的jar包以及新的FMI-1.0.jar放在环境上，如下：
+ 
+最后执行java -jar dsware-FMItoFMS.jar 127.0.0.1 23101 172.21.36.15 21500
+如：omm@Dsware-CI:/opt/chenchen> java -jar dsware-FMItoFMS.jar 127.0.0.1 23101 172.21.36.15 21500       
+会提示输入告警条数、告警id、告警类型等这些参数，输入后即可上报至fms。 
+
+提供测试工具almsimu
+此工具为测试工具，主要是用于自动化测试用例模拟发告警使用。调用almsimu将告警发送至消息队列，OMA每隔30s去消息队列里取30条上报至fms。
+请在http://3ms.huawei.com/hi/group/2029753/files.html#category=1178563 下载almisu工具，此工具包括almsimu和almsimu.cfg。
+ almsimu是可执行程序，almsimu.cfg是配置文件，配置如下：
+i_internal_id=10001
+i_alarm_type=0
+i_alarm_level=4
+i_alarm_cause=2
+freq=0.5         ---------------告警产生频率，1s产生0.5条，即2s产生一条告警
+sv_moc=sv_moc
+sv_resourceID=resourceID
+sv_location_info=location;information
+sv_additional_info=additional;information
+i_alarm_counts=-1 ----------------告警条数配置，默认为-1，不控制条数；当配置条数时，产生完指定条数的告警之后，进程自动退出。
+	使用方法：
+将almsimu.cfg和almsimu放在同一目录下，执行如下命令：
+./almsimu
+提供测试工具Fmatester
+Fmatester是一个java工程，导入eclipse即可使用，模拟oma，将告警直接通过thrift发送给fms。
+使用Fmatester要注意，由Fmatester分配ackNo，ackNo从2开始，每条告警要递增，每次最多上报30条，保证上报的告警不能超出滑窗。
+请在http://3ms.huawei.com/hi/group/2029753/files.html#category=1178563 下载Fmatester工程。
+ 
+
+4 接口
+告警模块涉及到的接口见《UDS V100R002C00 运维管理接口[OMM].doc》
+接口管理
+告警模块的接口见《UDS V100R002C00 运维管理接口[OMM].doc》
+
+5 常见定位手段
+日志搜集方法建议
+1、定位问题最好能在产品出现问题的环境上尽快定位清楚
+2、及时求助数据库，os，及组内同事专家
+3、尽量多搜集日志，将oms和oma侧的日志均收集，并且正常节点和异常节点的日志也收集
+4、暂时定位不出来，且产品催着要测试环境的时候，搜集日志请注意以下：
+日志路径
+【各产品日志路径以实际路径为准】
+OMS侧：
+	搜集日志
+	dsware、大数据产品搜集日志
+切换到omm用户下，搜集$OMS_LOG_PATH/fms目录下的日志【包括fms.log及相关被压缩的日志和scriptlog目录下的脚本日志】  -------------------注意将主备节点的日志都搜集
+ 
+	uds产品搜集日志
+对uds产品，产品使用syslog进行所有模块的日志管理，告警的日志打印到了syslog里面，搜集方法如下：
+ 
+/var/uds/log/rsyslog/tempintegrityLog/目录下有全量的日志（包括fms、pms、ism、oma等），每个小时压缩一个包，可以根据问题发生的时间点，取响应的日志文件。
+/var/uds/log/scriptlog/omm/oms/fms目录下有fms的启动脚本的日志，也要搜集。
+	搜集数据库中需要确认的表
+tbl_fm_alarm_active	告警活动表
+tbl_fm_alarm_log		告警历史表
+tbl_fm_event_log		事件历史表
+将数据库中的数据导出来的命令，导出文件的具体路径可以自己设定：
+登陆到环境上的数据库，在数据库目录下执行，如dsware环境的高斯数据库：
+ 
+\copy (select * from omm_1.tbl_fm_alarm_active) to '/opt/omm/oms/alarm-active.csv' CSV HEADER;
+\copy (select * from omm_1.tbl_fm_alarm_log) to '/opt/omm/oms/alarm-log.csv' CSV HEADER;
+\copy (select * from omm_1.tbl_fm_event_log) to '/opt/omm/oms/event-log.csv' CSV HEADER;
+OMA侧：
+	dsware、大数据产品搜集日志
+搜集$OMA_LOG_PATH下的日志 【包括omm_agent.log 模块日志 和scriptlog目录下的 omm_agent_ctl.log脚本日志】  -------------------注意尽量多搜集业务节点OMA的日志
+ 
+ 
+以上搜集OMA的日志适用于dsware和大数据产品，在root用户下可以直接找到环境变量$OMA_LOG_PATH
+	uds产品搜集日志
+对uds产品，使用syslog进行所有模块的日志管理，OMA的日志打印到了syslog里面，搜集方法如下：
+/var/uds/log/rsyslog/tempintegrityLog/目录下有全量的日志（包括fms、pms、ism、oma等），每个小时压缩一个包，可以根据问题发生的时间点，取响应的日志文件。
+ 
+/var/uds/log/scriptlog/omm/oma目录下有oma的启动脚本日志，注意搜集。
+日志分析
+告警模块的日志记录了告警的整个处理流程，接收、入库、上报，跟踪每条告警的处理，能够快速定位问题。
+fms.log
+[2013-12-24 16:52:50,584] [WARN ] [pool-1-thread-1] [FmsThriftServiceImpl:printLog 201] [fms]Received alarms from fma 
+alarm size:1
+the alarm info is:
+1:[129.20.4.77,21700,57,-1,0,1,33,1387875144,oms_osc,OMS02,129.20.11.8;22,129.20.11.7;system admin]
+event size:0
+[2013-12-24 16:52:51,284] [WARN ] [pool-3-thread-3] [ProcessStoreAlarm:storeToDb 395] [fms] Store alarm to database success. batchModel:addActiveAlarmList=[57,193,200,-1]
+updateAlarmList=[57,193,200,-1]
+clearAlarmList=
+syncNoList=[]
+[2013-12-24 16:52:51,555] [WARN ] [pool-3-thread-1] [ProcessAckAlarm:sendAckToFma 235] [fms] send ack to fma success. FmaIP:129.20.4.77 FmaPort:21700
+ all ack number:
+57
+[2013-12-24 16:52:51,794] [WARN ] [pool-3-thread-2] [ProcessReportAlarm:reportToLocalWS 230] [fms] reportToLocalWS alarmReportModel:{0.0.0.0,80,alarmReportList[193,200,-1]}
+fmws.log
+[2013-12-24 16:52:51,780] [WARN ] [routinePool-1-daemonThread-7] [ReportAlarmImpl:sendAlarmToGm 62] [fmws] sendAlarmToGm AddressInfo:[ 191.100.36.122,80,191.100.36.120], reportInfoMap:[193,200,-1]
+
+6 常用FAQ
+为什么servercfg.cfg文件配置错误，导致告警在界面上显示有问题？
+servercfg.cfg是OMA的配置文件，OMA根据servercfg.cfg的配置，向对应的节点发送告警信息。
+在OMA运行用户下，执行 echo $OMA_DATA_PATH 或 echo $OMA_CONF_PATH 获取servercfg.cfg所在路径
+servercfg.cfg中配置有LOCALIP和SERVERIP
+LOCALIP是oma上报告警会带此IP，fms根据此IP向oma回ackNo。
+SERVERIP是oma根据此IP向对应节点的fms上报告警信息。
+	如果LOCALIP或SERVERIP没有配置，导致OMA初始化失败，造成OMA启动失败。oma无法将告警发送至fms，界面上无法显示业务侧产生的告警。
+	如果LOCALIP配置了其他oma所在的节点，fms将ack信息发送至其他节点，导致本节点的oma重复上报告警，fms重复处理，界面上可能会显示同一条告警恢复之后又频繁出现。
+servercfg.cfg正确的配置如下：
+LOCALIP应该配OMA所在节点的物理IP
+SERVERIP应该配管理平面的浮动IP，即fms所在节点的管理平面的浮动IP。
+/etc/hosts文件中的ssoserver的作用是什么？
+/etc/hosts文件中有一个ssoserver配置：192.168.40.2    ssoserver
+fmws上报告警给GM，需要通过机机鉴权， /etc/hosts里的ssoserver应该配置gm的ip，否则导致鉴权失败，告警无法上报至GM。
+fms向网管上报告警失败，该怎么办？
+出现网络闪断等原因导致fms上报告警至网管端失败，网管端通过主动同步或定时查询的补采策略，可以将告警及时呈现在界面上。
+告警模块涉及哪些端口？ 
+各个模块的端口都会被产品记录在端口矩阵列表中，告警模块涉及的端口如下
+	23000
+FMS对外提供的RPC端口
+	23100
+FMS提供的接收外部命令的端口，暂无用
+	21500
+FMS接收OMA上报告警的Thrift端口
+	21700
+OMA接收FMS回ACK的Thrift端口
+	23133
+FMWS对外提供的RPC接口
+如何调整日志级别？
+Fms和Fmws对外发布时的日志级别都是WARN，在定位问题时，如果需要调整日志级别，直接修改log4j.properties配置文件中日志级别的配置：
+log4j.logger.org.wcc=WARN,A2_plus
+log4j.logger.com.omm=WARN,A2_plus
+修改日志级别之后，不用重启进程，可以动态生效
+有哪些环境变量可以方便操作？
+切换到omm用户下，可以使用环境变量，方便操作，例如：
+OMS_DATA_PATH：配置文件所在目录
+ 
+OMS_LOG_PATH：日志文件所在目录
+ 
+如何模拟发送告警？
+见章节3 告警发送工具，提供了几种可以模拟发送告警的工具，请根据实际情况使用。
+如何查看数据库中的告警表？
+	Dsware使用高斯数据库，切换到omm用户下，数据库密码是ommHuawei@123
+Dsware-chee:~ # su - omm
+omm@Dsware-chee:~> gsql -p 21600
+Password: 
+gsql (9.2.1)
+Type "help" for help.
+
+OMM=# set search_path=omm_1;
+SET
+OMM=# select * from tbl_fm_alarm_active;
+ 
+	UDS使用高斯数据库，切换到gaussdba用户下，数据库密码是gauss@123
+OMS02:~ # su - gaussdba
+gaussdba@OMS02:~> gsql -U XCATADMIN -d XCATDB -p 5432
+Password for user XCATADMIN: 
+gsql (9.2.1)
+Type "help" for help.
+
+XCATDB=> set search_path=omm_1;
+SET
+XCATDB=> select * from tbl_fm_alarm_active;
+XCATDB=>
+ 
+
+如何在本地测试fms对外提供的rpc接口？
+有时修改问题，需要测试rpc接口，在本地创建rpc客户端，连接环境上的fms。
+由于环境上的rpc接口只允许本机访问，如果在本地创建rpc客户端，访问环境上fms的rpc端口，要修改环境上fms的配置文件。
+切换到omm用户，修改application.properties，找到rpc_server_ip的配置项，将ip修改为0.0.0.0，并重启fms进程。
+BigData-CI:~ # su - omm
+omm@BigData-CI:~> vi $OMS_DATA_PATH/fms/application.properties
+omm@BigData-CI:~> restart_app fms
+本地的rpc客户端代码如下，不同的产品有不同的客户端工程，在使用时，将下面的工程导入eclipse，并修改工程中的application.properties配置文件，将配置项rpc_client_remoteAddress={129.20.101.9:23000}的ip配置为fms所在节点的浮动ip
+ 
+ 
+ 
+如何查看OS消息队列中的告警条数？
+直接在环境上执行如下指令：
+ipcs –q
+如下图，标亮的为666的这一行中messages对应的就是告警的条数，used-bytes对应的是告警所占的大小。
+ 
+如何在本地测试fmws对外提供的rest接口？
+测试rest接口，要使用restClient工具。restClient工具在本地，fmws在环境上部署。
+Fmws提供的rest接口有查询告警同步号，告警同步，告警手动清除。以查询告警同步号为例：
+由于加入了鉴权，在调用fmws提供的rest接口之前，要先登录进行身份认证，获取到token值，携带token值并调用查询告警同步号的接口即可。
+打开restClient工具，登录获取token值。获取到的token值为f3235c54-3053-4c2f-bcfa-36fe6a725544，如下图：
+ 
+	再打开一个restClient工具，输入url和token值，获取到要查找的同步号。如下图：
+ 
+注意：如果7777端口不能使用，那就要使用https 28443端口，在restClient工具里添加tomcat证书，默认密码为HuaweiOMM2.0canreallychangeIT###，如下：
+ 
+
+restClient工具：
+ 
+Tomcat证书： 
+ 
+为什么告警正常入库了，但是界面上没有？
+UDS有设置屏蔽规则的功能，此问题已经定位过多次。
+这种情况请先确认是否设置过屏蔽规则，将这条告警给屏蔽掉了，再上报此ID的告警是无法显示在界面上的。
+为什么业务侧上报了告警，但是界面上没有？
+对于这个问题，可能的原因很多，分析步骤如下：
+ 
+
+
+
+为什么fms正常运行的日志中会有这些WARN或ERROR级别的日志？
+	上报线程未启动
+ 	dsware和uds产品要求告警主动上报至界面，因此fms会启动上报线程，告警入库之后，会将告警放入上报队列，由上报线程上报至界面。
+大数据产品不要求告警主动上报至界面，因此在告警入库后将告警放入上报队列，会打印上报线程未启动，上报队列没有创建。
+由于代码是同一套，大数据打印此ERROR日志属于正常现象。
+fms的RPC返回码有哪些？
+0表示操作成功
+1表示清除失败
+2表示该告警不支持手工清除
+3表示该告警已经清除
+4表示该告警不存在
+5表示参数错误
+6表示操作失败
+7表示规则已存在
+8表示规则不存在
+9表示IP参数格式错误
+10表示无法连接FTP，参数设置不正确
+11表示FTP的文件路径不存在，参数设置不正确
+12表示服务器端口设置错误
+13表示SMTP服务器登陆设置参数错误
+14表示接收人过长
+15表示发送人未设置
+16表示短信中心号码未设置
+17表示国家码设置错误
+升级期间告警丢失怎么办？
+升级期间告警丢失是升级的方案约束，是可以接受的。
+升级过程产生的告警一般是都是由于升级时重启导致的，丢弃这段时间内的告警影响不大。这个是方案的约束，从开始升级到主备倒换期间的产生的新告警会丢失。如果要保证不丢失，也是可以做到的，只是代价比较高，核心网后来做了升级过程中告警不丢失的方案，开始升级之后，新产生的告警都存放到文件中，升级结束后再入库。
+7 常见问题分析
+由于文件servercfg.cfg配置问题，导致告警无法在界面显示 
+【问题现象】业务侧显示告警发送成功，界面上并显示没有告警信息
+【定位过程】
+	使用ipcs，查看消息队列里是否有告警
+	查看oma配置文件servercfg.cfg，LOCALIP及SERVERIP配置是否正确
+【定位结论】
+产品配置有问题，需要确认配置文件servercfg.cfg中的LOCALIP及SERVERIP配置的哪个平面的ip，由于SERVERIP配置不正确，告警上报至其他集群中的OMS节点，导致此OMS节点的告警无法在界面显示。
+【解决方案】
+LOCALIP应该配节点的物理IP
+SERVERIP应该配管理平面的浮动IP
+【附注】
+在OMA运行用户下，执行 echo $OMA_DATA_PATH 或 echo $OMA_CONF_PATH 获取配置文件所在路径
+OMA是根据servercfg.cfg的配置，向对应的节点发送告警信息。
+由于文件servercfg.cfg配置问题，导致告警重复的告警显示在界面上 
+【问题现象】业务侧显示告警发送成功，界面上显示完全相同（包括时间）的告警，自动恢复后，又在界面上生成。
+【定位过程】
+	使用ipcs，查看消息队列里是否有告警
+	查看oma配置文件servercfg.cfg，LOCALIP及SERVERIP配置是否正确
+【定位结论】
+ipcs查询出消息队列中的告警没有减少，而fms又一直处理此节点的告警，说明fms向oma回ACK有问题。
+排查servercfg.cfg，发现产品配置有问题， LOCALIP没有配置为OMA节点的IP，由于LOCALIP配置不正确，fms用LOCALIP向OMA回ACK信息，导致OMA没有接收到响应，每隔30s会重复发送。
+【解决方案】
+修改配置文件servercfg.cfg
+LOCALIP应该配节点的物理IP
+SERVERIP应该配管理平面的浮动IP
+【附注】
+在OMA运行用户下，执行 echo $OMA_DATA_PATH 或 echo $OMA_CONF_PATH 获取配置文件所在路径
+OMA是根据servercfg.cfg的配置，向对应的节点发送告警信息。
+FMS是根据servercfg.cfg中OMA上报时携带的LOCALIP，向OMA回响应ACK。
+由于文件servercfg.cfg配置问题，导致FMS启动rpc服务无法启动
+【问题现象】刚装好系统之后，一开始界面上有告警，运行了一段时间之后，界面上查询不到告警。
+
+
+
+
+【定位过程】
+	查看fms的日志fms.log，发现日志中有大量的回ack异常的告警，经确认是21700端口被防火墙禁掉了。
+ 
+并且发现一个问题，系统刚装好的环境，就出现了回ack失败的情况，OMA每隔30s依旧上报ackNo=2的一批告警，由于滑窗机制（见章节2.11）的约束，这种场景又无法进行抑制，就会造成
+（2）    使用netstat -anp | grep 23000查询rpc端口，发现端口未被监听，而经过确认，端口也没有被防火墙禁掉，那么没有被监听的原因可能就是进程没有起rpc服务。
+（3）    打开INFO日志级别，发现进程在每次启动时执行到要加载不同源告警的时候就没有日志了，然后就再次被HA重启，如此反复。
+（4）   怀疑是不同源告警的问题，打开不同源告警表tbl_fm_alarm_different_sources，发现告警有18691条，且ackNo为4,5的告警重复出现。由于fms在启动时要从数据库中加载这些不同源告警，然后再起rpc服务，经测试，fms在启动时加载这些告警时要耗费至少2分钟以上，而HA检查端口在1分钟之内，就导致fms的服务还没有起来的时候，HA检查认为fms资源异常，反复重启。
+（5）   已经找到导致fms的rpc服务没有启动的原因，但是问题根因是为什么会有那么多告警？正常情况下，对不同源告警，fms每隔10s去检测，当系统当前时间-告警发生时间>=35s，则会将告警取出进行处理，应该不会有那么多告警的。但是前面也说过，由于产品刚装好的环境，21700端口被禁掉，导致告警在反复上报，告警上报的周期是30s，而fms取告警的判断是35s，上报的速度大于处理的速度，这样的话，时间长了之后，fms缓存中会残留大量告警。至此，问题已经定位清楚。
+【定位结论】
+根因是产品环境的21700端口被禁掉，fms向OMA回ack失败，OMA重复上报告警，又遇上FMS对滑窗的约束场景，无法对重复告警做抑制，上报速度大于处理速度，从而导致运行一段时间之后fms缓存中有大量不同源告警，fms启动时无法启动rpc服务。
+【解决方案】
+由产品解决端口被禁掉的问题。
+【附注】
+此问题遇上了滑窗的约束场景，又遇上了不同源告警，同时端口又被禁掉，场景复杂，不好定位，要深刻理解滑窗和不同源的处理机制及应用场景。
+
+由于权限不足，导致使用FMI发送告警失败
+【问题现象】使用FMI发送告警，报如下异常
+ 
+【定位过程】
+一般是uds产品会报此异常，查看/var/uds/tmp目录的权限是否是777
+其他产品看FMI所在的目录的权限，so文件是否被正常解压
+【定位结论】
+由于权限不足，导致加载动态库失败，发送告警失败
+【解决方案】
+修改动态库所在的目录的权限
+【附注】
+对UDS产品，需要产品提供/var/uds/tmp目录，并且权限为777，动态库so文件解压到此目录并加载
+对dsware或大数据，动态库so文件解压到产品使用FMI的lib目录下，在此目录下加载，一般不存在权限的问题。
+由于产品上报的告警参数不正确，导致告警无法在界面显示
+【问题现象】业务侧显示告警发送成功，界面上显示没有此告警信息
+【定位过程】
+	查看fms.log，是否接收到此告警
+	看日志中是否由于产品上报的告警参数是否正确
+【定位结论】
+ 	 由于产品上报的故障告警或者恢复告警的参数不正确，fms作为不合法的告警处理，丢弃并回ACK给OMA，告警不会入库，也不会在界面上显示。
+【解决方案】
+需要业务侧定位告警参数的取值，上报的告警参数的规范见章节2.4
+【附注】
+
+由于adaptor抛异常，导致告警上报GM失败，无法及时显示在界面上 
+【问题现象】业务侧显示告警发送成功，界面上显示没有此告警信息，过几分钟之后，告警显示在界面上。
+【定位过程】
+	查看fms.log，看fms是否接收到此告警，并且告警已经入库
+	查看fmws.log，有异常打印如下：
+[2013-07-02 17:16:44,181] [WARN ] [routinePool-1-daemonThread-7] [ReportAlarmImpl:sendAlarmToGm 62] [fmws] sendAlarmToGm AddressInfo:[192.168.90.2,80,192.168.90.8], reportInfoMap:[75,148,51902]
+[2013-07-02 17:16:44,219] [ERROR] [routinePool-1-daemonThread-7] [ReportAlarmImpl:sendAlarmToGm 82] [fmws] sendAlarmToGm occur Exception.
+com.galaxmanager.iam.adapter.common.WebServiceException: AdapterClient invoke IOException
+…………………………………………
+Caused by: java.net.NoRouteToHostException: No route to host
+其中：
+AddressInfo:[192.168.90.2,80,192.168.90.8]表示为
+AddressInfo :[gm的ip，gm的port，oms的ip]
+reportInfoMap:[75,148,51902]表示为reportInfoMap:[流水号、同步号、告警ID]
+出现：Caused by: java.net.NoRouteToHostException: No route to host
+需要产品确认AddressInfo :[gm的ip，gm的port，oms的ip]是否正确。如果正确则需要查看/etc/hosts里配置的ssoserver是否是gm的ip，一般是由于ssoserver配置的不是gm的ip而导致上报gm失败
+【定位结论】由于上报GM失败，GM每隔5分钟发现告警没有主动上报则执行同步，使告警几分钟之后显示在界面上。由于/etc/hosts里配置的ssoserver配置的不是gm的IP，导致上报GM失败。
+【解决方案】
+（1）咨询产品是否修改过gm的IP
+（2）咨询安装组，是否在修改ip之后修改了此项配置，并且及时同步到备节点
+【附注】
+另上报GM异常时，Adaptor还可能抛出Caused by: org.apache.http.conn.ConnectTimeoutException: Connect to 192.168.90.2:80 timed out
+问题现象与此现象一致，但原因是dswareManager与GM节点之间通信有问题，属于环境问题，知会测试人员。
+由于gm保存的同步号大于fms上报的同步号，导致告警无法在界面显示
+【问题现象】业务侧一直有告警产生，但是GM界面上没有此时间产生的告警信息
+【定位过程】
+（1）查看fms.log，是否接收到告警并入库
+（2）查看fmws.log，是否上报GM成功
+（3）登陆到GM的节点上，查看gm接收到的告警日志，日志路径为/var/log/GalaxManager/irm/comon/sendalarm.log
+查看发送的告警在gm端是否接收到，日志如下：
+[2013-03-15 17:44:33,309 +0800] [ERROR] [http-bio-8080-exec-58] [com.galaxmanager.irm.fm.AlarmProcessController 324] sendAlarm to FMServer errorCode = 1102,from =DSWARE,alarmid =51817,category =ALARM,sn=1,syncno =1,ip=192.168.40.10
+errorCode = 1102表示告警同步号没有递增
+（4）咨询测试人员，是否重装了dswareManager节点而没有重装GM节点，导致fms分配的同步号从1开始，而gm节点已经保存了之前上报的告警的最大同步号。
+【定位结论】
+只重装dswareManager节点而没有重装gm节点是会出现此问题，或者只重装dswareManager节点后把流水号和同步号增大，但是没有比GM保存的同步号大，也会出现此问题。
+【解决方案】
+（1）测试人员在重装dswareManager节点之后，可以手动修改tbl_fm_alloc_no表，修改流水号和同步号为比较大的值，请确认比gm保存的同步号大。
+（2）建议测试人员必须同时重装dswareManager和GM节点进行测试
+【附注】
+（1）很多情况下，是需要查看GM的日志，已确认fmws发送成功，而GM界面上没有显示的原因。
+（2）GM接收告警的日志路径为：/var/log/GalaxManager/irm/comon/sendalarm.log，GM接收到的告警返回码：
+903：不识别的告警类型
+1102：告警同步号没有递增
+926：非法部件，即部件的浮动IP没有配置，oms的浮动IP
+由于存在错误配置，导致告警监控向OMA回ACK失败
+【问题现象】FMS、PMS日志中不断打印如下异常 即向129.7.84.116节点回ack时，报如下异常，而此节点在集群中并不存在，也ping不通
+ 
+【定位过程】
+	fms或pms回的ack中的agentIP都是OMA上报的数据中带上来的，OMA是根据servercfg.cfg配置文件中的LOCALIP获取agentIP的，要先排查servercfg.cfg是否误配了此IP。
+	确认有没有发生过环境共用、集群切换、扩容兼容等操作
+【定位结论】
+经排查，所有的OMA节点上的配置文件中都没有配置此IP，而集群环境的硬盘框之前是满框，用过此IP，后面这个IP没有用，硬盘框上的这个节点是空的。因此IP成为了一个未知ip的野节点，恰好配置了正确的SERVERIP，错误的LOCALIP，通过SERVERIP上报到fms或pms。
+【解决方案】
+不影响正常业务，只是日志中有异常打印。
+OMA直接将servercfg.cfg中的LOCALIP上报至fms或pms，没有校验此IP是否是OMA节点的物理IP，如果LOCALIP配置错误，S侧根据这个ip回ack就会有问题。当错误ip不存在时，s侧回ack异常，OMA的消息队列中的告警会一直上报，并且会导致消息队列满；当错误ip恰好配了一个已存在的节点的ip，可能会删除此节点上的告警信息，导致此节点告警丢失。
+建议优化。
+【附注】
+由于GM版本的rest接口为8080，告警上报失败
+【问题现象】dsware局点反馈，告警无法在界面显示，告警fmws的日志中显示告警上报GM失败
+【定位过程】
+（1）dsware有些局点使用的GM版本的端口为8080，而我们OMM对外发布的版本端口都是80，首先需要确认GM版本
+（2）如果GM版本也是使用80端口，无法上报告警具体的定位方法见4.4
+（3）如果GM版本是8080端口，需要我们配合修改的话，具体方法见【解决方案】
+【定位结论】
+【解决方案】
+	修改FMS模块application.properties中http_restclient_remotePort配置项为80
+	修改FMWS模块application.properties中GM_PORT配置项为80
+	修改adapterconfig.properties中的端口443为8443
+【附注】
+由于升级后告警静态表没有升级成功，导致告警无法在界面上显示
+【问题现象】升级成功之后，会产生一条告警，业务侧显示告警发送成功，界面上却没有此条告警
+【定位过程】
+（1）根据业务侧发送的告警id（UDS产品业务侧发送的告警打印出来的id为十六进制，需转换为十进制），在FMS的日志文件中搜索fms是否接收到此告警id 
+（2）日志中打印此告警id不合法，说明告警定义表中没有此告警id
+（3）查看数据库告警定义表tbl_fm_alarm_definition是否有此告警id
+（4）告警定义表中只有一条默认的告警id，升级之后告警定义表没有升级成功
+【定位结论】
+	升级之后，告警的定义表需要升级为新版本
+	升级之后，此表为初始安装的记录，是升级过程中导入新版本数据失败，由升级相关人员解决
+【解决方案】
+如果要规避此问题，使告警功能恢复正常，需要手动将告警定义表的sql脚本导入，并重启fms
+【附注】
+由于告警参数被截断，导致告警无法自动恢复
+【问题现象】升级前产生故障告警，升级成功之后，产生恢复告警，业务侧显示告警发送成功，界面上的告警却没有自动恢复
+【定位过程】
+（1）查看fms的日志，通过告警id定位到此条告警
+（2）日志中打印此告警的恢复告警找不到匹配的故障告警，被丢弃
+（3）观察告警参数，发现故障告警和恢复告警的moc值不相同
+[localhost,21212,989,6752,0,1,20004,1396349587,FusionInsight Hadoop,Controller,Hive,]
+[51.196.0.2,21700,142,6752,1,1,0,1396350019,FusionInsight Hadoo,Controller,Hive,]
+（4）通过业务侧了解到，升级时改变了此条告警的发送方式，升级前是通过FMI直接发给fms，升级后是通过FMI调用动态库的方式发给OMA，由OMA上报给fms。
+【定位结论】
+由于调用动态库，动态库中初始化定义了moc长度为20（有一个\0占位，故只能保存19个字节），正是由于这种方式导致字符串被截断，故障和恢复告警的关键参数不一致，告警无法自动恢复。
+【解决方案】
+业务侧正好有需求要对moc和resourceID两个字段进行整改，保证长度不会超过20
+见如下结论：
+会议结论：omm不需要修改moc和resourceID的字段长度，由产品对这两个字段进行处理
+会议参与人：陈燕  邓金波 陈晨
+对于moc字段，由产品采用静态表的方式映射
+产生告警时，只需要写映射关系，通过映射关系来实现关联告警，OMM不用关系具体内容
+如：针对moc字段，表示告警对象，定义告警所属的服务和角色
+1	HBase
+2	HMaster
+	
+moc=1，2
+
+对于resourceID字段，表示告警的实例ID，产品采用16进制的方式填充，支持四级关系，能够满足产品需求
+如：resourceID=FF,FFFF,FF,F
+【附注】
+由于上报syslog的插件配置问题，导致告警无法上报至syslog服务端
+【问题现象】业务侧新增插件，配置成功之后，告警无法上报至syslog服务端
+【定位过程】
+	查看fms的插件配置文件fms_pluginconfig.xml，确认新增插件配置是否正常
+<list>
+<!-- This value is used in obtaining the object instance -->
+
+<pluginInfo>
+<version>1.0</version>
+<module>Northbound</module>
+<jarName>northbound-0.0.1.jar</jarName>
+<interfaceClass>com.omm.extern.fms.service.IReportAlarmInfoPlugin</interfaceClass>
+<implementClass>com.omm.fms.plugin.northbound.NorthboundFmsPluginImpl</implementClass>
+</pluginInfo>
+<pluginInfo>
+<version>1.0</version>
+<module>Northbound</module>
+<jarName>northbound-0.0.1.jar</jarName>
+<interfaceClass>com.omm.extern.fms.service.IReportAlarmInfoPlugin</interfaceClass>
+<implementClass>com.huawei.hadoop.om.northbound.snmp.SnmpFmsPluginImp</implementClass>
+</pluginInfo>
+</list>
+	将fms启动时加载插件的代码进行分析
+【定位结论】
+Fms加载插件时是根据module的配置项作为key值，插件bean作为value值，存放在Map中，上述两个插件module的配置都为Northbound，在map中覆盖了前一个插件的配置，故告警无法上报至第一个插件配置的syslog服务上
+【解决方案】
+作为约束，告警上报syslog的插件的module名字的配置必须唯一，详细见章节1.3.3
+
+由于maven依赖编译下载问题，导致告警无法上报GM
+【问题现象】主动上报Dsware的告警和手动清除告警失败，问题单DTS2014042104829
+ 
+ 
+【定位过程】
+	查看fmws.log日志，根据异常“类找不到”，去排查代码使用这个类的地方，判断是httpcore的jar包缺少类，发现环境上的httpcore的jar包版本为4.1.3，而应该是4.2.1，至此确定是jar包的版本不对导致的
+ 
+	Fmws依赖wcc，wcc依赖下载httpcore这个jar包。Maven编译下载依赖的jar包时，是根据最短路径的规则，如下：
+ 
+Httpcore的两个版本的jar包，在wcc中的依赖距离都为3，因此存在两个版本的jar包随机被下载
+ 
+【解决方案】
+wcc修改其pom文件中的jar包依赖，将libfb303包中的低版本的httpcore包排除，确保只能下载到高版本的httpcore包。
+ 
+由于不同源告警的上报顺序问题，导致告警无法自动恢复
+【问题现象】主动上报Dsware的告警和手动清除告警失败，问题单DTS2014042104829
+ 
+ 
+【定位过程】
+	查看fmws.log日志，根据异常“类找不到”，去排查代码使用这个类的地方，判断是httpcore的jar包缺少类，发现环境上的httpcore的jar包版本为4.1.3，而应该是4.2.1，至此确定是jar包的版本不对导致的
+ 
+	Fmws依赖wcc，wcc依赖下载httpcore这个jar包。Maven编译下载依赖的jar包时，是根据最短路径的规则，如下：
+ 
+Httpcore的两个版本的jar包，在wcc中的依赖距离都为3，因此存在两个版本的jar包随机被下载
+ 
+【解决方案】
+wcc修改其pom文件中的jar包依赖，将libfb303包中的低版本的httpcore包排除，确保只能下载到高版本的httpcore包。
+ 
+
+
+由于告警ID定义配置错误，导致添加告警过滤规则失败
+【问题现象】在ISM界面上将告警ID“60179873846”选中，添加为告警过滤规则，界面提示“添加过滤规则失败”。
+【定位过程】
+	查看fms.log日志，提示“告警id在告警定义表中不存在” 
+	查看tbl_fm_alarm_definition，发现告警ID“60179873846”是存在的
+ 
+	分析代码，告警添加过滤规则的功能，是对外部告警ID进行操作的，内部告警ID和外部告警ID的相关知识点见章节2.4
+	再次查看tbl_fm_alarm_definition，发现告警ID“60179873846”在数据库中对应的外部告警ID是“17652365918239”
+ 
+【定位结论】
+告警过滤是对外部告警ID进行操作的，UDS产品配置的外部告警ID和内部告警ID是一样的，界面传来外部告警为“60179873846”，但是数据库中存放的是“17652365918239”，导致在校验时认为告警ID不存在。
+告警定义表中告警ID的配置是由产品负责的，是产品的配置出了问题。
+【解决方案】
+由产品排查并修改告警定义sql，将内部告警ID和外部告警ID保持一致。
+【附注】
+此问题涉及内部告警ID和外部告警ID、告警定义表的生成和维护、添加告警过滤规则（及告警屏蔽规则），相关知识点可在上面的章节中查找。
+
+由于FMS内存不足和异常没有捕获，导致进程卡死，告警无法处理
+【问题现象】UDN印度局点升级后，界面上没有告警。
+【定位过程】
+	将环境上告警相关的日志都取出来，查看fms.log日志，提示“无法初始化类，数据库操作失败”，怀疑是数据库有问题，但是经过确认，数据库的状态是正常的。 
+	同时发现日志里在大量接收告警，但是接收到之后都没有处理，导致缓存队列满了。
+ 
+	怀疑是告警处理线程没有起来，用jstack抓线程栈，发现预处理线程、入库线程、ack线程等都没有起来。
+ 
+将日志级别打开，发现初始化线程队列之后，后面的操作都没有执行到。
+	分析代码，线程没有启动的原因，有一个怀疑点是异常没有捕获，如果异常没有捕获的话，会导致异常直接抛到主线程，后面的线程启动的操作无法执行。如果事件表tbl_fm_event_log结构有问题，fms对这个表创建单表操作对象就会抛异常，没有捕获异常的话必然导致这个问题。但是对这个怀疑点，找不到证据。
+	让局点现场先规避，重启fms进程，但是问题却仍然出现
+	在家里执行升级，重现两次都没有出现。
+	现有的日志里无法再分析了，请教专家，增加一些调试参数进行观察。
+修改启动脚本/opt/huawei/Bigdata/OMS-V100R001C00.x86_64/workspace/bin/omm_s_fm_ctl.sh
+修改点（1）：
+ 
+在jvmbase参数后面加上-verbose:class
+修改点（2）：
+ 
+修改日志重定向，将/dev/null修改为${OMS_LOG_PATH}/fms/test.log
+	分析取回的test.log，发现有”OutOfMemoryError”异常，至此问题根因找到了
+ 
+
+【定位结论】
+现网环境升级过程中业务中断，堆积了大量告警。而家里升级时没有堆积告警，这是家里和现网的最大的区别，一开始考虑到这一点了，但是没有和内存占用联想起来。
+升级成功后告警进程在启动时，现网有大量告警上报，占用大量内存，在创建线程对象时堆内存不足，导致线程没有启动，无法正常处理告警。
+如下日志，在进程刚启动时，有大量告警上报
+ 
+发现在创建ProcessStoreEvent线程对象时抛出堆内存溢出异常，如下
+ 
+【解决方案】
+	调整告警堆内存，原来为最小堆10MB，最大堆20MB，现在调整为最小堆256MB，最大堆256MB；
+	修改FMS的代码，优化启动顺序，在FMS相关的缓存队列和处理线程准备好之后，再启动对外接收告警的服务，使告警能够得到正常的处理。
+	排查并修改FMS代码，对异常进行捕获，避免异常抛到主线程里，导致进程卡死。
+【附注】
+由于日志中报的是数据库的异常，因此一开始的怀疑点都在数据库的问题上，当确定数据库没有问题时，思路就中断了。
+此问题定位了很长时间，最后的关键点是将控制台日志打印出来，问题根因马上找到。因此，要积累定位问题的手段，以便快速准确地定位出问题。
+由于业务侧上报大量告警，导致告警堆积，界面上很久才显示出来
+【问题现象】
+业务侧在3月7号7点08分左右产生60179873815号故障告警，但是界面上过了很久，半个小时之后，才显示出此告警。
+【定位过程】
+	数据库中60179873815告警如下，正是业务侧的那条告警。
+ 
+ 
+	分析fms的日志，发现fms在40分钟左右才接收到
+ 
+	分析oma的日志，发现OMA上报的告警量很大
+由于fms接收到的告警是OMA周期取得业务侧的告警并上报的，发现OMA上报的告警量很大。业务侧产生告警发送至OS消息队列，OMA每隔30s从消息队列中取30条上报至fms，从这个时刻 开始，这个节点的业务侧产生大量告警，OMA每次都取30条上报。
+ 
+………………
+ 
+取一条为例：
+告警产生时间和告警处理时间相差了8分钟，并且随着消息队列中的告警越来越多，这个时间会相差更大。
+ 
+
+【定位结论】
+由于业务侧上报大量告警，告警在消息队列中堆积，而告警的上报周期为30s30条，告警很久才被得到处理，因此告警过了一段时间才在界面上显示。
+分析业务侧产生的告警，比如60179873805，在每一秒都产生，并且同一秒产生3条，并且这些都是无效的恢复告警，请业务侧确认为什么会产生如此多的告警。
+ 
+【解决方案】
+由业务侧去排查修改
+【附注】
+需要了解告警的处理流程
+由于网络不通，数据库无法同步，并且主备倒换，导致告警丢失
+【问题现象】业务侧发送了恢复告警，但是从界面上看，告警并没有被恢复。
+ 
+
+ 
+
+【定位过程】
+	查看fms的日志fms.log，发现确实接收到了业务侧上报的恢复告警，并且已经成功入库，此节点为备。
+
+
+
+
+
+（2）    查看主上的数据库，发现数据库中没有恢复告警，怀疑是数据库没有同步。
+（3）    经HA的同事分析，网络一直不通，数据库的主备之间无法通信。
+【定位结论】
+FEU-2在降备之前，发送恢复告警，并成功入库，此时由于网络故障（交换机下电，已与UDN确认），入库数据并没有同步到备上，待网络恢复正常之后，
+HA通过仲裁，认为FEU-2已经不能在做主了，将FEU-2降备，此时会将新主上的数据同步到旧主上。
+	由于交换机下电，网络故障，旧主发的恢复告警数据，并没有同步到新主上，此时新主上的数据覆盖旧主，告警清除不了。
+【解决方案】
+告警的处理没有问题，由于数据库同步使告警被覆盖，与告警模块没有关系，由产品去跟踪和解决此问题，Hadoop在HA中只配了一个仲裁IP(默认网管IP)，如果网管IP ping不同，HA就认为该OMS应该降备。
+是否需要配多个仲裁IP，Hadoop需要进一步讨论。
+【附注】
+
