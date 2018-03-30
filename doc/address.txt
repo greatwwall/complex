@@ -21,3 +21,15 @@ http://www.cnblogs.com/duanxz/category/434044.html
 
 红黑树
 http://blog.csdn.net/v_JULY_v/article/details/6124989
+
+
+书签
+https://docs.djangoproject.com/en/2.0/intro/
+https://blog.csdn.net/column/details/pycharm.html?&page=3
+https://blog.csdn.net/wagcy/article/details/13002063
+http://tyrion.iteye.com/
+https://blog.csdn.net/hupanfeng
+https://blog.csdn.net/moshenglv/article/details/52699976
+https://blog.csdn.net/chjttony/article/category/1239946/2
+http://www.importnew.com/
+
