@@ -15,3 +15,10 @@ create database xxx;
 
 导入sql
 source xxx.sql;
+
+
+
+cd  /etc/mysql/mysql.conf.d
+vim mysqlld.cnf
+添加 lower_case_table_names=1
+/etc/init.d/mysql restart
