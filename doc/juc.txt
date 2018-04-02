@@ -1,0 +1,18 @@
+ReentrantLock实现了Lock接口
+ReentrantLock和Sync是组合关系
+CAS是比较交换函数,它是原子操作函数
+
+Object中的wait.notify.notifyAll方法是与Synchronized捆绑使用的
+Condition中的await.singal.singalAll方法是与ReentrantLock捆绑使用的
+await会释放锁
+
+ReadWriteLock "读取锁"用于只读操作,允许多个线程获取
+              "写入所"用于写入操作,只能被一个线程获取
+
+CountDownLatch本质上是一个共享锁
+CountDownLatch允许一个或N个线程等待其他线程完成,计数器无法被重置
+
+CyclicBarrier允许N个线程相互等待,计数器可以被重置后使用
+CyclicBarrier是通过ReentrantLock和Condition来实现的
+
+Semaphore维护了一个信号量许可集,本质是一个共享锁
