@@ -1,0 +1,7 @@
+//更换镜像名称
+docker tag imageId newName
+//后台启动镜像
+docker run -d -i -t debian /bin/bash
+docker run -p 80:80 --name mynginx -v $PWD/conf/nginx.conf:/etc/nginx/nginx.conf -d nginx
+//进入容器
+docker exec -i -t containerId /bin/bash
