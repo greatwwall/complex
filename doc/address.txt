@@ -1,7 +1,5 @@
-https://docs.oracle.com/javase/8/docs/api/
-http://www.w3school.com.cn/
-https://stackoverflow.com/
-https://git-for-windows.github.io/
+git project
+https://github.com/lihengming/spring-boot-api-project-seed
 
 机器人
 http://rnd-github.huawei.com/b00104087/rb
