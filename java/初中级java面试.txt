@@ -1,0 +1,132 @@
+JAVA SE部分
+1.string类的常用方法有哪些？
+  contains, equals, hashcode, index, length, substr
+2.String,StringBuffer,StringBuilder的区别。
+  String是final类,不可变,其他两个不是
+  StringBuffer是线程安全的,StringBuilder非线程安全
+3.String str = new String("xyz");创建了几个对象。
+  两个,一个是字符串对象"xyz", 一个是String对象"xyz"
+4.说几个你常见到的异常。
+  IndexOutOfBounds, Arrithmetic, ClassCast, FileNotFound, IllegalArguments, NullPointer, EOF
+5.hashtable和hashmap的区别是什么？
+  前者线程安全,后者非线程安全
+6.hashmap的底层实现方式是什么？
+  jdk1.8 数组+链表+红黑树
+  jdk1.7 数组+链表,锁分段技术
+7.Vector 和 ArrayList 的区别？
+  都是数组实现
+  前者线程安全,扩容一倍
+  后者线程不安全,扩容一半
+8.怎么遍历一个map？写一下。
+9.说一下list，set，map的区别。
+  list,set是Collection的接口
+  list 有序 允许重复元素 可以插入多个null元素
+  set  无序 不允许重复元素 允许插入一个null元素
+10.你的项目中用的是多线程还是单线程？
+11.多线程会遇到那些问题？怎么解决死锁？
+  无锁定重排序 加volatile
+  锁顺序
+  
+12.用java写一个多线程程序，如写四个线程，二个加1，二个对一变量减一，输出：
+13.至少说六点interface和abstract的区别。
+  前者没有构造器 后者有,但是不能实例化
+  前者所有方法都是public 后者可以是其他修饰
+  前者允许多继承 后者不允许
+  前者很少有成员变量,有也是常量 后者一般都有
+  前者没有私有成员变量 后者可以有
+  
+  static 方法是类方法,它是不允许子类覆写（override）
+而abstract方法是没有实现的方法，是必须由子类来覆写的。
+  
+14.怎么把数组放到对象里面？
+  
+15.给你一组字符串如：7i8hy4jjnb2.让你编程输出里面的数字：7842.
+  charAt pattern
+16.多线程有几种实现方式？都是什么？同步有几种实现方式？都是什么？
+  三种实现: 继承Thread 实现Runnable 实现Callable
+  同步三种: synchronized wait notify ThreadLocal
+17.java类实现序列化有几种实现方式？都是什么？（二种）
+  implements Serializable
+  implements Externalizable
+18.java开发中“==” 和 “equals” 有何区别？
+  Object 中都是比较地址
+  其他类中会重写,前者比较地址,后者比较值
+19.static局部变量与全局变量的区别，编译后映射文件是否包含此类变量的地址。
+20.在日常工作中，使用过哪些 java core 包，遇到java core 的那些异常？
+
+JAVA WEB部分
+21.在servlet中怎么获取页面传过来的 name="a" 或者 id="b" 的<input>输入框的值？
+  request.getParameter("id")
+22.jsp和servlet有哪些相同点和不同点，他们之间的联系是什么？
+  jsp中可以嵌入Java代码,servlet中可以嵌入html代码
+  web容器会将jsp转化为java文件, Javac再编译为class文件
+  
+  为什么要用jsp做显示而不用servlet？
+  为了view和controller分开
+23.说一下servlet的生命周期，在执行servlet的过程中分别执行了哪些方法？每个方法具体负责什么？可以实现一些什么内容？
+  init 初始化配置配置参数
+  service 根据get或post执行具体方法,实现业务逻辑
+  destory 销毁servlet,实例被回收
+24，你知道easyUI吗？
+25.<div><span>1</span><span>2</span><span>3</span></div>如何获取第二个span的值？
+  document.getDocumentById().childNodes()[1]
+26.用js或者jquery获取页面上name="a" 或者 id="b" <input>输入框的值.
+  $("#b").value()
+27.两种跳转方式分别是什么？有什么区别？
+  转发 是服务器行为,客户端不知
+  重定向 有两次请求
+  区别:
+  前者在服务端完成,后者在客户端完成
+  前者是同一次请求,后者是两次请求
+  前者地址栏不变,后者地址栏有变化
+  转发必须在同一台服务器下,重定向可以在不同的服务器
+28.get和post有什么区别？
+  长度限制 安全 编码方式 
+  get一次性把header和data发送过去,一个TCP数据包
+  post第一次把header发送过去,第二次才把data发送过去, 两个TCP数据包
+29.jsp常用指令？
+  page taglib include
+30.jsp的内置对象是什么？尽量说全一点。
+  request response out session pageContext page config application exception
+31.请使用jQuery将页面上的所有元素边框设置为2px宽的虚线。
+  jQuery(function($){
+    $("*").css("border", "2px dashed");
+  })
+32.如何用jQuery禁用浏览器的前进后退按钮？
+  window.history.forward();
+33.请写出手机号的正则表达式。
+  1[358][\d]{9}
+  1[358][0-9]{9}
+34.请写出邮箱的正则表达式。
+  ^[0-9a-zA-Z_-]+@[0-9a-zA-Z_-]+(\.[0-9a-zA-Z]+)+
+35.alert();中怎么控制换行？
+  alert("通知\n转行");
+36.至少说三个IE和Firefox的兼容问题。
+  
+37.说几个jquery种常用的方法。
+  val(),text(),html(),attr(), hide(), show(),addClass(), removeClass(), css(), find(),parent()
+38.ajax是如何传递数据的？他是同步的还是异步的？怎么实现同步？
+  1.创建连接,2.客户端向服务端发送数据,3.服务端向客户端返回数据,4.客户端处理数据
+  异步
+  实现同步:async:true/false
+39.mvc的各个部分都有哪些技术实现？如何实现？
+
+40.我们在web应用开发过程中经常遇到输出某种编码字符，如iso8859-1,如何输出一个某种编码的字符串？
+41.mybatis一对多关系怎么实现？
+42.mybatis怎么用collection生成复杂的sql。
+43.说一下缓存，你用过那些缓存框架，为什么要用缓存。
+44.什么是ejb？
+45.什么是JPA?
+46.你用过webservice吗？怎么用的？它的原理是什么？webservice和http有是区别？webservice是怎么处理安全问题的。
+47.你知道那些java的前段插件，用过那些？
+48.你知道那些java的后端插件，用过那些？
+49.在SSM框架中，用什么处理事务。
+50.掌握的java后端技术有哪些。
+51.项目中是用什么管理事务的，手动提交还是自动提交。
+52.SpringMvc如何统一设置编码。
+53.图片上传用的是前台上传还是后台上传，前台用的是什么js上传，怎么上传的。后台是怎么上传的。
+54.spring用什么连接欸数据库?用什么处理事务？
+55.接口传输数据有没有加密，怎么加密。
+56.一个大文件，上传到一半的时候网断了，想在接下来继续从断点开始上传，怎么做？
+57.你知道那些设计模式，说一下单例什么时候用到，原理是什么？手写一个单例。
+58.你会用socket吗？怎么写socket服务端。
