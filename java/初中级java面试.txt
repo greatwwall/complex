@@ -110,23 +110,82 @@ JAVA WEB部分
   异步
   实现同步:async:true/false
 39.mvc的各个部分都有哪些技术实现？如何实现？
-
+  V: jsp,html,jstl
+  M: mybatis, hibernate
+  C: servlet, spring
 40.我们在web应用开发过程中经常遇到输出某种编码字符，如iso8859-1,如何输出一个某种编码的字符串？
+  servlet response.setContentType("text/html;charset=utf-8")
+  过滤器 设置utf-8
+  jsp page设置utf-8
+  引入jar包的编码是否为utf-8
 41.mybatis一对多关系怎么实现？
+  resultMap association
 42.mybatis怎么用collection生成复杂的sql。
+  <resultMap id="clazz" type="Clazz">
+    <id column="class_id" property="clazzId" jdbcType="Integer"/>
+    <result column="class_name" property="clazzName" jdbcType="varchar"/>
+    <collection column="class_id" property="studentList" jdbcType="ArrayList"
+      ofType="Student" select="selectStudentsByClassId"/>
+   </resultMap>
+   <select id="selectStudentsByClassId" resultMap="StudentMap" parameterType="Integer"
+    select * from student where class_id=#{clazzId}
+   </select>
 43.说一下缓存，你用过那些缓存框架，为什么要用缓存。
+  encache 
+  避免多次查询
 44.什么是ejb？
+  enterprise javabean  C/S
 45.什么是JPA?
+  Java持久化规范
 46.你用过webservice吗？怎么用的？它的原理是什么？webservice和http有是区别？webservice是怎么处理安全问题的。
+  
 47.你知道那些java的前段插件，用过那些？
+  
 48.你知道那些java的后端插件，用过那些？
+  
 49.在SSM框架中，用什么处理事务。
+  注解
 50.掌握的java后端技术有哪些。
 51.项目中是用什么管理事务的，手动提交还是自动提交。
 52.SpringMvc如何统一设置编码。
+  web.xml中设置utf-8
 53.图片上传用的是前台上传还是后台上传，前台用的是什么js上传，怎么上传的。后台是怎么上传的。
+  
 54.spring用什么连接欸数据库?用什么处理事务？
 55.接口传输数据有没有加密，怎么加密。
 56.一个大文件，上传到一半的时候网断了，想在接下来继续从断点开始上传，怎么做？
 57.你知道那些设计模式，说一下单例什么时候用到，原理是什么？手写一个单例。
 58.你会用socket吗？怎么写socket服务端。
+
+数据库部分
+59.多表关联查询提升执行效率有哪些可以考虑的优化点？
+  主键索引 减少表嵌套 只查需要的字段 不用笛卡尔积,用left join
+60.查询某表中的第50到80行的数据（分别用mysql,oracle,sqlserver三种数据库实现，假定表中有唯一递增字段ID）（其实就是数据库分页吧）
+  select * from table limit 50,30;
+61.sql批量添加是什么添加的？
+  insert into table (a,b) values ('',''),...,('','');
+62.你还知道mysql有哪些功能？ 
+  
+63.熟悉哪些数据库，用的最多的是哪个？
+64.你用过数据库连接池吗？他的原理是什么？
+  维护一个可连接数据库的集合
+65.mysql怎么优化。
+66.sql优化有哪些方法？
+
+其他问题：（算法、排序、数据结构、主观交流）
+67.你最擅长的技术有哪些。
+68.你想进入一个什么样的团队？
+69.你给自己的定位是初级中级高级？
+70.以前公司是做什么的，或者之前公司项目的业务流程是什么？
+71.你之前做过最难的模块是什么？
+72.你在开发项目的过程中遇到过问题吗？是怎么处理的？
+73.之前公司用的什么框架？
+74.平时看哪些方面的书？
+75.服务器调优有哪些技巧？
+76.代码优化有哪些方法？
+77.UML是什么?
+78.双向链表中一个节点是a，另一个节点是b，怎么向它的中间插入一个值。
+79.树的遍历有哪几种？
+80.一个项目的从立项开始，整体流程是什么？
+81.你知道哪几种排序方式，最快的是那个？手写一个冒泡排序算法。
+82.算法，简单的递归。
